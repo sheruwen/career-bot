@@ -1,0 +1,117 @@
+{
+  "include_keywords": [
+    "產品經理",
+    "Product Manager",
+    "PM",
+    "產品規劃",
+    "產品策略",
+    "需求訪談",
+    "需求分析",
+    "PRD",
+    "roadmap",
+    "wireframe",
+    "prototype",
+    "stakeholder",
+    "利害關係人",
+    "使用者研究",
+    "使用者數據",
+    "數據分析",
+    "A/B test",
+    "MVP",
+    "backlog",
+    "Scrum",
+    "Agile",
+    "跨部門協作",
+    "RD",
+    "Designer",
+    "QA"
+  ],
+  "require_include_keyword_match": true,
+  "fuzzy_match_enabled": true,
+  "fuzzy_match_threshold": 0.5,
+  "required_keywords_all": [],
+  "min_required_group_matches": 1,
+  "required_keyword_groups": [
+    [
+      "PRD",
+      "產品需求文件",
+      "需求文件",
+      "需求規格",
+      "規格文件",
+      "functional spec",
+      "spec",
+      "產品需求",
+      "需求定義",
+      "需求整理"
+    ],
+    [
+      "roadmap",
+      "road map",
+      "產品路線圖",
+      "產品 roadmap",
+      "產品規劃",
+      "版本規劃",
+      "產品策略",
+      "產品計畫",
+      "規劃產品方向"
+    ],
+    [
+      "利害關係人",
+      "stakeholder",
+      "stakeholders",
+      "跨部門溝通",
+      "跨部門協作",
+      "協作溝通",
+      "溝通協調",
+      "跨團隊協作",
+      "部門協作"
+    ],
+    [
+      "wireframe",
+      "wireframes",
+      "線框稿",
+      "mockup",
+      "prototype",
+      "原型",
+      "原型設計",
+      "figma",
+      "流程圖",
+      "user flow",
+      "prototype design"
+    ]
+  ],
+  "exclude_keywords": [
+    "輪班",
+    "駐點",
+    "約聘",
+    "業務代表"
+  ],
+  "include_companies": [],
+  "exclude_companies": [
+    "博弈"
+  ],
+  "include_industry_keywords": [
+    "軟體",
+    "資訊服務",
+    "網際網路",
+    "SaaS",
+    "雲端",
+    "數位科技",
+    "AI"
+  ],
+  "require_industry_match": true,
+  "allowed_cities": [
+    "台北市",
+    "新北市",
+    "遠端"
+  ],
+  "preferred_cities": [
+    "台北市",
+    "新北市",
+    "遠端"
+  ],
+  "minimum_salary": 50000,
+  "require_remote": false,
+  "minimum_score": 8,
+  "top_n": 10
+}
