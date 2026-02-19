@@ -11,22 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      WEB104_API_URL: ${{ secrets.WEB104_API_URL }}
-      WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD }}
-      WEB104_AREA: ${{ secrets.WEB104_AREA }}
-      WEB104_PAGES: ${{ secrets.WEB104_PAGES }}
-      WEB104_ORDER: ${{ secrets.WEB104_ORDER }}
-      WEB104_ASC: ${{ secrets.WEB104_ASC }}
-      WEB104_TIMEOUT: ${{ secrets.WEB104_TIMEOUT }}
+      WEB104_API_URL: ${{ secrets.WEB104_API_URL || 'https://www.104.com.tw/jobs/search/api/jobs' }}
+      WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD || '產品經理' }}
+      WEB104_AREA: ${{ secrets.WEB104_AREA || '6001001000' }}
+      WEB104_PAGES: ${{ secrets.WEB104_PAGES || '1' }}
+      WEB104_ORDER: ${{ secrets.WEB104_ORDER || '15' }}
+      WEB104_ASC: ${{ secrets.WEB104_ASC || '0' }}
+      WEB104_TIMEOUT: ${{ secrets.WEB104_TIMEOUT || '20' }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
-      LINE_PUSH_ENDPOINT: ${{ secrets.LINE_PUSH_ENDPOINT }}
-      LINE_TIMEOUT: ${{ secrets.LINE_TIMEOUT }}
+      LINE_PUSH_ENDPOINT: ${{ secrets.LINE_PUSH_ENDPOINT || 'https://api.line.me/v2/bot/message/push' }}
+      LINE_TIMEOUT: ${{ secrets.LINE_TIMEOUT || '20' }}
       GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
-      GOOGLE_SHEETS_WORKSHEET: ${{ secrets.GOOGLE_SHEETS_WORKSHEET }}
-      GOOGLE_SHEETS_APPEND_HEADER: ${{ secrets.GOOGLE_SHEETS_APPEND_HEADER }}
-      GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING: ${{ secrets.GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING }}
-      GOOGLE_SHEETS_HEADER_ROW: ${{ secrets.GOOGLE_SHEETS_HEADER_ROW }}
+      GOOGLE_SHEETS_WORKSHEET: ${{ secrets.GOOGLE_SHEETS_WORKSHEET || 'Job List' }}
+      GOOGLE_SHEETS_APPEND_HEADER: ${{ secrets.GOOGLE_SHEETS_APPEND_HEADER || 'true' }}
+      GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING: ${{ secrets.GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING || 'false' }}
+      GOOGLE_SHEETS_HEADER_ROW: ${{ secrets.GOOGLE_SHEETS_HEADER_ROW || 'auto' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,11 +43,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}" ]; then
+          RAW='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}'
+          if [ -z "$RAW" ]; then
             echo "GOOGLE_SHEETS_CREDENTIALS_JSON_B64 is empty"
             exit 1
           fi
-          echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}" | base64 --decode > /tmp/google_service_account.json
+          if echo "$RAW" | base64 --decode > /tmp/google_service_account.json 2>/tmp/base64_err.log; then
+            echo "Decoded GOOGLE_SHEETS_CREDENTIALS_JSON_B64 as base64"
+          else
+            echo "$RAW" > /tmp/google_service_account.json
+            echo "Used GOOGLE_SHEETS_CREDENTIALS_JSON_B64 as raw JSON text"
+          fi
+          if ! grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"' /tmp/google_service_account.json; then
+            echo "Google credentials content is invalid (missing service_account type)."
+            exit 1
+          fi
           chmod 600 /tmp/google_service_account.json
           echo "GOOGLE_SHEETS_CREDENTIALS_FILE=/tmp/google_service_account.json" >> "$GITHUB_ENV"
 
