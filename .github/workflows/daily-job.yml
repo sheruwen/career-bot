@@ -43,23 +43,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RAW='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}'
-          if [ -z "$RAW" ]; then
-            echo "GOOGLE_SHEETS_CREDENTIALS_JSON_B64 is empty"
-            exit 1
+          RAW_B64='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}'
+          RAW_JSON='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}'
+
+          if [ -z "$RAW_B64" ] && [ -z "$RAW_JSON" ]; then
+            echo "WARN: Google credentials secret is empty, skip Google Sheet append."
+            echo "GOOGLE_SHEETS_CREDENTIALS_FILE=" >> "$GITHUB_ENV"
+            exit 0
           fi
-          if echo "$RAW" | base64 --decode > /tmp/google_service_account.json 2>/tmp/base64_err.log; then
+
+          if [ -n "$RAW_B64" ] && echo "$RAW_B64" | base64 --decode > /tmp/google_service_account.json 2>/tmp/base64_err.log; then
             echo "Decoded GOOGLE_SHEETS_CREDENTIALS_JSON_B64 as base64"
+          elif [ -n "$RAW_JSON" ]; then
+            echo "$RAW_JSON" > /tmp/google_service_account.json
+            echo "Used GOOGLE_SHEETS_CREDENTIALS_JSON as raw JSON text"
           else
-            echo "$RAW" > /tmp/google_service_account.json
-            echo "Used GOOGLE_SHEETS_CREDENTIALS_JSON_B64 as raw JSON text"
+            echo "$RAW_B64" > /tmp/google_service_account.json
+            echo "Used GOOGLE_SHEETS_CREDENTIALS_JSON_B64 as raw JSON text fallback"
           fi
-          if ! grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"' /tmp/google_service_account.json; then
-            echo "Google credentials content is invalid (missing service_account type)."
-            exit 1
+
+          if grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"' /tmp/google_service_account.json; then
+            chmod 600 /tmp/google_service_account.json
+            echo "GOOGLE_SHEETS_CREDENTIALS_FILE=/tmp/google_service_account.json" >> "$GITHUB_ENV"
+          else
+            echo "WARN: Google credentials content is invalid, skip Google Sheet append."
+            rm -f /tmp/google_service_account.json
+            echo "GOOGLE_SHEETS_CREDENTIALS_FILE=" >> "$GITHUB_ENV"
           fi
-          chmod 600 /tmp/google_service_account.json
-          echo "GOOGLE_SHEETS_CREDENTIALS_FILE=/tmp/google_service_account.json" >> "$GITHUB_ENV"
 
       - name: Run daily job tool
         run: python3 job_tool.py --source web104 --rules rules.json --output-dir outputs
