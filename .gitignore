@@ -1,6 +1,13 @@
 .env
+.env.*
 .venv/
 __pycache__/
 *.pyc
 google-sheet-writer.json
 outputs/
+keys/
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
+.DS_Store

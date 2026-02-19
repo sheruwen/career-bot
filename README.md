@@ -195,3 +195,18 @@ for k in keys:
     print(f"- {k}: set={ok}{extra}")
 PY
 ```
+
+## Git 安全檢查（推送前）
+
+推送到 GitHub 前，先執行：
+
+```bash
+cd "/Users/wendy/wendy's projects/job application"
+./scripts/check_git_safety.sh
+```
+
+這個檢查會阻擋以下檔案被追蹤：
+- `.env` 正式密鑰檔
+- `google-sheet-writer.json` 與其他 credentials/service-account JSON
+- `keys/` 下的金鑰
+- `.pem` / `.key`
