@@ -1,0 +1,64 @@
+name: Daily Job Fetch
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 Asia/Taipei = 01:00 UTC
+    - cron: "0 1 * * *"
+
+jobs:
+  run-daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB104_API_URL: ${{ secrets.WEB104_API_URL }}
+      WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD }}
+      WEB104_AREA: ${{ secrets.WEB104_AREA }}
+      WEB104_PAGES: ${{ secrets.WEB104_PAGES }}
+      WEB104_ORDER: ${{ secrets.WEB104_ORDER }}
+      WEB104_ASC: ${{ secrets.WEB104_ASC }}
+      WEB104_TIMEOUT: ${{ secrets.WEB104_TIMEOUT }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
+      LINE_PUSH_ENDPOINT: ${{ secrets.LINE_PUSH_ENDPOINT }}
+      LINE_TIMEOUT: ${{ secrets.LINE_TIMEOUT }}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+      GOOGLE_SHEETS_WORKSHEET: ${{ secrets.GOOGLE_SHEETS_WORKSHEET }}
+      GOOGLE_SHEETS_APPEND_HEADER: ${{ secrets.GOOGLE_SHEETS_APPEND_HEADER }}
+      GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING: ${{ secrets.GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING }}
+      GOOGLE_SHEETS_HEADER_ROW: ${{ secrets.GOOGLE_SHEETS_HEADER_ROW }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare Google credentials file
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}" ]; then
+            echo "GOOGLE_SHEETS_CREDENTIALS_JSON_B64 is empty"
+            exit 1
+          fi
+          echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}" | base64 --decode > /tmp/google_service_account.json
+          chmod 600 /tmp/google_service_account.json
+          echo "GOOGLE_SHEETS_CREDENTIALS_FILE=/tmp/google_service_account.json" >> "$GITHUB_ENV"
+
+      - name: Run daily job tool
+        run: python3 job_tool.py --source web104 --rules rules.json --output-dir outputs
+
+      - name: Upload output artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-job-outputs
+          path: |
+            outputs/jobs_*.md
+            outputs/jobs_*.json

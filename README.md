@@ -99,6 +99,47 @@ crontab -e
 0 9 * * * /Users/wendy/wendy's\ projects/job\ application/run_daily.sh >> /Users/wendy/wendy's\ projects/job\ application/outputs/cron.log 2>&1
 ```
 
+## 6) 雲端排程（GitHub Actions，電腦關機也可跑）
+
+專案已內建 workflow：`/Users/wendy/wendy's projects/job application/.github/workflows/daily-job.yml`  
+排程時間是每天台灣時間 09:00（UTC `01:00`）。
+
+### GitHub Secrets 要設定的欄位
+
+到 GitHub Repo -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`，新增：
+
+- `WEB104_API_URL`（建議：`https://www.104.com.tw/jobs/search/api/jobs`）
+- `WEB104_KEYWORD`
+- `WEB104_AREA`
+- `WEB104_PAGES`
+- `WEB104_ORDER`
+- `WEB104_ASC`
+- `WEB104_TIMEOUT`
+- `LINE_CHANNEL_ACCESS_TOKEN`
+- `LINE_TO_USER_ID`
+- `LINE_PUSH_ENDPOINT`（建議：`https://api.line.me/v2/bot/message/push`）
+- `LINE_TIMEOUT`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `GOOGLE_SHEETS_WORKSHEET`
+- `GOOGLE_SHEETS_APPEND_HEADER`
+- `GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING`
+- `GOOGLE_SHEETS_HEADER_ROW`
+- `GOOGLE_SHEETS_CREDENTIALS_JSON_B64`（把 service account JSON 檔案做 base64 後貼上）
+
+### 產生 `GOOGLE_SHEETS_CREDENTIALS_JSON_B64`
+
+在本機執行：
+
+```bash
+base64 -i /absolute/path/to/google_service_account.json | tr -d '\n'
+```
+
+把輸出整串字串貼到 GitHub Secret `GOOGLE_SHEETS_CREDENTIALS_JSON_B64`。
+
+### 手動觸發測試
+
+GitHub Repo -> `Actions` -> `Daily Job Fetch` -> `Run workflow`。
+
 ## 備註
 
 - 預設 `--source web104`（104 公開搜尋），不需要 104 access token。
