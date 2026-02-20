@@ -5,8 +5,8 @@ on:
   repository_dispatch:
     types: [cron-fallback]
   schedule:
-    # GitHub Actions cron minimum interval is 5 minutes.
-    - cron: "*/5 * * * *"
+    # Run once per day at 02:00 UTC (10:00 Asia/Taipei, GitHub cron uses UTC).
+    - cron: "0 2 * * *"
 
 jobs:
   run-daily:
