@@ -41,6 +41,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore seen-job dedup cache
+        uses: actions/cache/restore@v4
+        with:
+          path: outputs/seen_job_keys.txt
+          key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            seen-job-keys-${{ github.ref_name }}-
+
       - name: Prepare Google credentials file
         shell: bash
         run: |
@@ -76,6 +84,13 @@ jobs:
       - name: Run daily job tool
         run: python3 job_tool.py --source web104 --rules rules.json --output-dir outputs
 
+      - name: Save seen-job dedup cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: outputs/seen_job_keys.txt
+          key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
+
       - name: Upload output artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -84,3 +99,4 @@ jobs:
           path: |
             outputs/jobs_*.md
             outputs/jobs_*.json
+            outputs/seen_job_keys.txt

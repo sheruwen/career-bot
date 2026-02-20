@@ -12,6 +12,7 @@ from email.header import decode_header
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -613,7 +614,22 @@ def minimize_job_output(job: dict[str, Any]) -> dict[str, Any]:
 def canonical_job_key(job: dict[str, Any]) -> str:
     url = str(job.get("url", "")).strip()
     if url:
-        return url.split("?", 1)[0].rstrip("/")
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = parsed.path.rstrip("/")
+        if host.endswith("104.com.tw"):
+            path_lower = path.lower()
+            job_match = re.search(r"/job/([a-z0-9]+)", path_lower)
+            if job_match:
+                return f"104job::{job_match.group(1)}"
+            query = parse_qs(parsed.query)
+            for key in ("jobno", "jobNo", "jobid", "jobId"):
+                vals = query.get(key)
+                if vals and vals[0].strip():
+                    return f"104job::{vals[0].strip().lower()}"
+        normalized_url = f"{host}{path}".rstrip("/")
+        if normalized_url:
+            return normalized_url
     title = str(job.get("title", "")).strip().lower()
     company = str(job.get("company", "")).strip().lower()
     return f"{title}::{company}"
