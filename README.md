@@ -103,6 +103,7 @@ crontab -e
 
 專案已內建 workflow：`/Users/wendy/wendy's projects/job application/.github/workflows/daily-job.yml`  
 目前測試設定為每 5 分鐘執行一次（GitHub Actions 最小間隔）。
+若 GitHub `schedule` 偶發漏觸發，可改用 `repository_dispatch` 當 fallback。
 
 ### GitHub Secrets 要設定的欄位
 
@@ -139,6 +140,21 @@ base64 -i /absolute/path/to/google_service_account.json | tr -d '\n'
 ### 手動觸發測試
 
 GitHub Repo -> `Actions` -> `Daily Job Fetch` -> `Run workflow`。
+
+### 排程備援（建議）
+
+如果你發現 `schedule` 沒有固定觸發，可用外部 cron 服務（例如 cron-job.org）呼叫：
+
+```bash
+POST https://api.github.com/repos/sheruwen/career-bot/dispatches
+Authorization: Bearer <GITHUB_PAT_WITH_repo_and_workflow>
+Accept: application/vnd.github+json
+Content-Type: application/json
+
+{"event_type":"cron-fallback"}
+```
+
+這會觸發同一個 workflow（`repository_dispatch`）。
 
 ## 備註
 

@@ -2,6 +2,8 @@ name: Daily Job Fetch
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [cron-fallback]
   schedule:
     # GitHub Actions cron minimum interval is 5 minutes.
     - cron: "*/5 * * * *"
