@@ -102,7 +102,7 @@ crontab -e
 ## 6) 雲端排程（GitHub Actions，電腦關機也可跑）
 
 專案已內建 workflow：`/Users/wendy/wendy's projects/job application/.github/workflows/daily-job.yml`  
-排程時間是每天台灣時間 09:00（UTC `01:00`）。
+目前測試設定為每 5 分鐘執行一次（GitHub Actions 最小間隔）。
 
 ### GitHub Secrets 要設定的欄位
 
