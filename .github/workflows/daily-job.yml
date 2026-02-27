@@ -44,7 +44,7 @@ jobs:
       - name: Restore seen-job dedup cache
         uses: actions/cache/restore@v4
         with:
-          path: outputs/seen_job_keys.txt
+          path: outputs/seen_104_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
             seen-job-keys-${{ github.ref_name }}-
@@ -88,7 +88,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: outputs/seen_job_keys.txt
+          path: outputs/seen_104_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload output artifacts
@@ -99,4 +99,4 @@ jobs:
           path: |
             outputs/jobs_*.md
             outputs/jobs_*.json
-            outputs/seen_job_keys.txt
+            outputs/seen_104_job_keys.txt
