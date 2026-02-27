@@ -2,6 +2,19 @@ name: Daily Job Fetch
 
 on:
   workflow_dispatch:
+    inputs:
+      manual_test_mode:
+        description: "Manual test mode: isolate seen files (no dedup pollution)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      disable_google_sheets:
+        description: "Disable Google Sheets append for this run"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
   repository_dispatch:
     types: [cron-fallback]
   schedule:
@@ -13,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.manual_test_mode || 'false' }}
+      DISABLE_GOOGLE_SHEETS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.disable_google_sheets || 'false' }}
       WEB104_API_URL: ${{ secrets.WEB104_API_URL || 'https://www.104.com.tw/jobs/search/api/jobs' }}
       WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD || '產品經理' }}
       WEB104_AREA: ${{ secrets.WEB104_AREA || '6001001000' }}
@@ -42,6 +57,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Restore seen-job dedup cache
+        if: env.MANUAL_TEST_MODE != 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -55,6 +71,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${DISABLE_GOOGLE_SHEETS}" = "true" ]; then
+            echo "Manual mode: disable Google Sheets append."
+            echo "GOOGLE_SHEETS_CREDENTIALS_FILE=" >> "$GITHUB_ENV"
+            echo "GOOGLE_SHEETS_SPREADSHEET_ID=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
           RAW_B64='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON_B64 }}'
           RAW_JSON='${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}'
 
@@ -84,13 +107,27 @@ jobs:
           fi
 
       - name: Run daily job tool (104)
-        run: python3 job_tool.py --source web104 --rules rules.json --output-dir outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEEN_104="outputs/seen_104_job_keys.txt"
+          if [ "${MANUAL_TEST_MODE}" = "true" ]; then
+            SEEN_104="/tmp/seen_104_job_keys.txt"
+          fi
+          python3 job_tool.py --source web104 --rules rules.json --output-dir outputs --seen-file "$SEEN_104"
 
       - name: Run daily job tool (Cake)
-        run: python3 job_tool.py --source cake --output-dir outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEEN_CAKE="outputs/seen_cake_job_keys.txt"
+          if [ "${MANUAL_TEST_MODE}" = "true" ]; then
+            SEEN_CAKE="/tmp/seen_cake_job_keys.txt"
+          fi
+          python3 job_tool.py --source cake --output-dir outputs --seen-file "$SEEN_CAKE"
 
       - name: Save seen-job dedup cache
-        if: always()
+        if: always() && env.MANUAL_TEST_MODE != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
