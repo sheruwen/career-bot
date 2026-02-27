@@ -1,9 +1,9 @@
-# 104 每日職缺清單工具（104 公開搜尋 + LINE 推播）
+# 每日職缺清單工具（104 / Cake + LINE 推播）
 
 這個工具會：
-1. 直接抓取 104 公開搜尋職缺。
-2. 用 `rules.json` 的條件評分與篩選職缺。
-3. 每次輸出當日結果到 `outputs/jobs_YYYY-MM-DD.md` 與 `outputs/jobs_YYYY-MM-DD.json`。
+1. 直接抓取 104 或 Cake 公開搜尋職缺。
+2. 用來源對應規則檔（104: `rules.json`、Cake: `rules_cake.json`）評分與篩選職缺。
+3. 每次輸出當日結果到來源分離檔案（例如 `outputs/jobs_104_YYYY-MM-DD.json`、`outputs/jobs_cake_YYYY-MM-DD.json`）。
 4. 把摘要推播到你的 LINE。
 5. 自動把當日職缺 append 到 Google Sheet。
 
@@ -23,6 +23,10 @@ cp rules.example.json rules.json
 - `WEB104_KEYWORD`: 搜尋關鍵字（例如 `產品經理`）
 - `WEB104_AREA`: 地區代碼（例如 `6001001000` 代表台北市）
 - `WEB104_PAGES`: 要抓幾頁搜尋結果
+- `CAKE_KEYWORD`: Cake 搜尋關鍵字（例如 `產品經理`）
+- `CAKE_LOCATION`: Cake 地區（可留空）
+- `CAKE_PAGES`: Cake 要抓幾頁
+- `CAKE_SEARCH_URL_TEMPLATE`: Cake 搜尋 URL 模板（可留空，預設 `/jobs/{keyword}?page={page}`）
 - `LINE_CHANNEL_ACCESS_TOKEN`: LINE Messaging API token
 - `LINE_TO_USER_ID`: 要推播的 LINE 使用者 ID
 - `GOOGLE_SHEETS_CREDENTIALS_FILE`: service account JSON 絕對路徑
@@ -31,7 +35,9 @@ cp rules.example.json rules.json
 - `GOOGLE_SHEETS_HEADER_ROW`: 欄位列號（預設 `auto`，自動判斷表頭列）
 - `GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING`: 是否允許自動建新分頁（預設 `false`）
 
-編輯 `rules.json` 以符合你的求職條件。
+編輯規則檔以符合你的求職條件：
+- 104：`rules.json`
+- Cake：`rules_cake.json`
 常用欄位：
 - `include_keywords`: 命中可加分
 - `require_include_keyword_match`: 是否要求至少命中一個 include 關鍵字
@@ -57,6 +63,12 @@ bash run_daily.sh
 
 ```bash
 python3 job_tool.py --no-line-push
+```
+
+如果你要改抓 Cake：
+
+```bash
+python3 job_tool.py --source cake --no-line-push
 ```
 
 如果你要先做離線測試（不連外部來源）：
@@ -159,11 +171,13 @@ Content-Type: application/json
 ## 備註
 
 - 預設 `--source web104`（104 公開搜尋），不需要 104 access token。
+- 可用 `--source cake` 抓 Cake 公開職缺搜尋頁。
+- 104/Cake 預設使用分離去重檔：`outputs/seen_104_job_keys.txt`、`outputs/seen_cake_job_keys.txt`。
 - 若未來你有 104 API，也可以改成 `python3 job_tool.py --source api`。
 - 本工具輸出欄位採最小化（職缺名稱、公司、地點、薪資、連結、分數、理由）。
 - 輸出檔案權限為 `600`（僅檔案擁有者可讀寫）。
 - 使用情境定位為個人求職整理，不對外提供 API 或下載。
-- 內建跨次去重，已處理職缺會記錄在 `outputs/seen_job_keys.txt`。
+- 內建跨次去重，依來源分開記錄已處理職缺。
 - Google Sheet 寫入使用 append API，由 API 處理插入列，避免先擴列再插入造成空白列。
 
 ## 評分邏輯（簡版）

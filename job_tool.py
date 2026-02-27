@@ -7,12 +7,13 @@ import imaplib
 import json
 import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from email.header import decode_header
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
@@ -74,6 +75,46 @@ class AnchorParser(HTMLParser):
         self.current_text_chunks = []
 
 
+class ScriptParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.current_script_type = ""
+        self.current_script_id = ""
+        self.current_chunks: list[str] = []
+        self.in_script = False
+        self.scripts: list[dict[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "script":
+            return
+        attrs_map = {k.lower(): (v or "") for k, v in attrs}
+        self.in_script = True
+        self.current_script_type = attrs_map.get("type", "").strip().lower()
+        self.current_script_id = attrs_map.get("id", "").strip()
+        self.current_chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self.in_script:
+            self.current_chunks.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "script" or not self.in_script:
+            return
+        content = "".join(self.current_chunks).strip()
+        if content:
+            self.scripts.append(
+                {
+                    "type": self.current_script_type,
+                    "id": self.current_script_id,
+                    "content": content,
+                }
+            )
+        self.in_script = False
+        self.current_script_type = ""
+        self.current_script_id = ""
+        self.current_chunks = []
+
+
 def load_rules(path: Path) -> MatchRule:
     with path.open("r", encoding="utf-8") as f:
         raw = json.load(f)
@@ -108,6 +149,11 @@ def _normalize_text_for_match(text: str) -> str:
     lowered = text.lower()
     # Keep CJK and alnum, drop most separators to make "road map" ~= "roadmap".
     return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", lowered)
+
+
+def normalize_city_name(text: str) -> str:
+    # Normalize common Traditional Chinese variants for city matching.
+    return (text or "").strip().replace("臺", "台")
 
 
 def keyword_in_text(text: str, keyword: str, fuzzy: bool, threshold: float) -> bool:
@@ -149,7 +195,7 @@ def keyword_in_text(text: str, keyword: str, fuzzy: bool, threshold: float) -> b
     return False
 
 
-def normalize_job(job: dict[str, Any]) -> dict[str, Any]:
+def normalize_job(job: dict[str, Any], source: str = "unknown") -> dict[str, Any]:
     title = job.get("jobName") or job.get("title") or ""
     company = job.get("custName") or job.get("companyName") or ""
     city = job.get("jobAddrNoDesc") or job.get("city") or ""
@@ -196,6 +242,7 @@ def normalize_job(job: dict[str, Any]) -> dict[str, Any]:
         "industry": str(industry),
         "tags": [str(t) for t in tags],
         "remote": remote,
+        "source": source,
         "source_raw": job,
     }
 
@@ -343,9 +390,11 @@ def score_job(job: dict[str, Any], rules: MatchRule) -> tuple[int, list[str]]:
             return -9999, [f"必要群組命中不足: {group_hits}/{required_hits}"]
 
     if rules.allowed_cities and job["city"]:
-        city = job["city"].strip()
+        city = normalize_city_name(job["city"])
         city_allowed = any(
-            allowed.strip() and allowed.strip() in city for allowed in rules.allowed_cities
+            (allowed := normalize_city_name(allowed_raw))
+            and (allowed in city)
+            for allowed_raw in rules.allowed_cities
         )
         if not city_allowed:
             return -9999, [f"不在允許城市: {job['city']}"]
@@ -385,10 +434,11 @@ def score_job(job: dict[str, Any], rules: MatchRule) -> tuple[int, list[str]]:
             reasons.append(f"偏好公司: {c}")
 
     if rules.preferred_cities and job["city"]:
-        city = job["city"].strip()
+        city = normalize_city_name(job["city"])
         city_preferred = any(
-            preferred.strip() and preferred.strip() in city
-            for preferred in rules.preferred_cities
+            (preferred := normalize_city_name(preferred_raw))
+            and (preferred in city)
+            for preferred_raw in rules.preferred_cities
         )
         if city_preferred:
             score += 6
@@ -486,6 +536,371 @@ def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
     return jobs
 
 
+def _iter_dicts(node: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(node, dict):
+        yield node
+        for val in node.values():
+            yield from _iter_dicts(val)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_dicts(item)
+
+
+def _coerce_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        m = re.search(r"\d[\d,]*", value)
+        if m:
+            return int(m.group(0).replace(",", ""))
+    return 0
+
+
+def _extract_city_from_job_location(location: Any) -> str:
+    if isinstance(location, dict):
+        addr = location.get("address")
+        if isinstance(addr, dict):
+            for k in ("addressLocality", "addressRegion", "streetAddress"):
+                v = addr.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        for k in ("name", "city", "addressLocality"):
+            v = location.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    if isinstance(location, list):
+        for item in location:
+            city = _extract_city_from_job_location(item)
+            if city:
+                return city
+    if isinstance(location, str):
+        return location.strip()
+    return ""
+
+
+def _extract_text_field(node: dict[str, Any], keys: list[str]) -> str:
+    for key in keys:
+        val = node.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def _extract_company(node: dict[str, Any]) -> str:
+    company = node.get("hiringOrganization") or node.get("company") or node.get("employer")
+    if isinstance(company, dict):
+        for key in ("name", "title"):
+            val = company.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    if isinstance(company, str):
+        return company.strip()
+    return _extract_text_field(node, ["companyName", "company_name"])
+
+
+def _extract_salary(node: dict[str, Any]) -> int:
+    candidates = [
+        node.get("salary"),
+        node.get("salaryLow"),
+        node.get("salaryMin"),
+        node.get("monthlySalary"),
+        node.get("minSalary"),
+    ]
+    base = node.get("baseSalary")
+    if isinstance(base, dict):
+        value = base.get("value")
+        if isinstance(value, dict):
+            candidates.extend([value.get("minValue"), value.get("value"), value.get("maxValue")])
+        else:
+            candidates.append(value)
+    for c in candidates:
+        num = _coerce_int(c)
+        if num > 0:
+            return num
+    return 0
+
+
+def _to_absolute_url(url: str, base_url: str) -> str:
+    clean = (url or "").strip()
+    if not clean:
+        return ""
+    if clean.startswith("http://") or clean.startswith("https://"):
+        return clean
+    if clean.startswith("/"):
+        return base_url.rstrip("/") + clean
+    return base_url.rstrip("/") + "/" + clean
+
+
+def _is_cake_job_url(url: str) -> bool:
+    clean = (url or "").strip().lower()
+    if not clean:
+        return False
+    return bool(
+        re.search(r"/companies/[^/]+/jobs/[^/?#]+", clean)
+    )
+
+
+def _extract_cake_jobs_from_json_ld(html: str, base_url: str) -> list[dict[str, Any]]:
+    parser = ScriptParser()
+    parser.feed(html)
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for script in parser.scripts:
+        if "ld+json" not in script.get("type", ""):
+            continue
+        try:
+            payload = json.loads(script["content"])
+        except json.JSONDecodeError:
+            continue
+        for node in _iter_dicts(payload):
+            node_type = node.get("@type")
+            if isinstance(node_type, list):
+                is_job_posting = any(str(x).lower() == "jobposting" for x in node_type)
+            else:
+                is_job_posting = str(node_type).lower() == "jobposting"
+            if not is_job_posting:
+                continue
+            title = _extract_text_field(node, ["title", "name"])
+            company = _extract_company(node)
+            city = _extract_city_from_job_location(node.get("jobLocation"))
+            url = _to_absolute_url(_extract_text_field(node, ["url"]), base_url)
+            if not title or not _is_cake_job_url(url):
+                continue
+            key = url or f"{title.lower()}::{company.lower()}"
+            if key in seen:
+                continue
+            seen.add(key)
+            jobs.append(
+                {
+                    "title": title,
+                    "companyName": company,
+                    "city": city,
+                    "salary": _extract_salary(node),
+                    "jobUrl": url,
+                    "description": _extract_text_field(node, ["description"]),
+                    "industry": _extract_text_field(node, ["industry"]),
+                    "keyword": [],
+                    "remote": False,
+                }
+            )
+    return jobs
+
+
+def _extract_cake_jobs_from_next_data(html: str, base_url: str) -> list[dict[str, Any]]:
+    parser = ScriptParser()
+    parser.feed(html)
+    payload: dict[str, Any] | None = None
+    for script in parser.scripts:
+        if script.get("id") == "__NEXT_DATA__":
+            try:
+                loaded = json.loads(script["content"])
+            except json.JSONDecodeError:
+                loaded = None
+            if isinstance(loaded, dict):
+                payload = loaded
+                break
+    if not payload:
+        return []
+
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node in _iter_dicts(payload):
+        url = _extract_text_field(node, ["url", "jobUrl", "job_url"])
+        title = _extract_text_field(node, ["title", "name", "jobTitle", "job_title"])
+        if not title or not url:
+            continue
+        url_abs = _to_absolute_url(url, base_url)
+        if not _is_cake_job_url(url_abs):
+            continue
+        company = _extract_company(node)
+        city = _extract_text_field(node, ["city", "location", "locationName"])
+        if not city:
+            city = _extract_city_from_job_location(node.get("jobLocation"))
+        key = url_abs or f"{title.lower()}::{company.lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        jobs.append(
+            {
+                "title": title,
+                "companyName": company,
+                "city": city,
+                "salary": _extract_salary(node),
+                "jobUrl": url_abs,
+                "description": _extract_text_field(node, ["description", "summary"]),
+                "industry": _extract_text_field(node, ["industry"]),
+                "keyword": node.get("tags", []) if isinstance(node.get("tags"), list) else [],
+                "remote": bool(node.get("remote", False)),
+            }
+        )
+    return jobs
+
+
+def _extract_cake_jobs_from_anchors(html: str, base_url: str) -> list[dict[str, Any]]:
+    parser = AnchorParser()
+    parser.feed(html)
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for anchor in parser.anchors:
+        href = anchor.get("url", "")
+        text = anchor.get("text", "").strip()
+        if not href:
+            continue
+        url = _to_absolute_url(href, base_url)
+        if not _is_cake_job_url(url):
+            continue
+        key = url.rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        jobs.append(
+            {
+                "title": text,
+                "companyName": "",
+                "city": "",
+                "salary": 0,
+                "jobUrl": url,
+                "description": "",
+                "industry": "",
+                "keyword": [],
+                "remote": False,
+            }
+        )
+    return jobs
+
+
+def _extract_cake_job_from_detail_html(html: str, base_url: str) -> dict[str, Any] | None:
+    parser = ScriptParser()
+    parser.feed(html)
+    for script in parser.scripts:
+        if "ld+json" not in script.get("type", ""):
+            continue
+        try:
+            payload = json.loads(script["content"])
+        except json.JSONDecodeError:
+            continue
+        for node in _iter_dicts(payload):
+            node_type = node.get("@type")
+            if isinstance(node_type, list):
+                is_job_posting = any(str(x).lower() == "jobposting" for x in node_type)
+            else:
+                is_job_posting = str(node_type).lower() == "jobposting"
+            if not is_job_posting:
+                continue
+            title = _extract_text_field(node, ["title", "name"])
+            url = _to_absolute_url(_extract_text_field(node, ["url"]), base_url)
+            if not title or not _is_cake_job_url(url):
+                continue
+            return {
+                "title": title,
+                "companyName": _extract_company(node),
+                "city": _extract_city_from_job_location(node.get("jobLocation")),
+                "salary": _extract_salary(node),
+                "jobUrl": url,
+                "description": _extract_text_field(node, ["description"]),
+                "industry": _extract_text_field(node, ["industry"]),
+                "keyword": [],
+                "remote": False,
+            }
+    return None
+
+
+def _enrich_cake_jobs_with_detail(
+    jobs: list[dict[str, Any]], base_url: str, headers: dict[str, str], timeout: int
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for job in jobs:
+        company = str(job.get("companyName", "")).strip()
+        if company:
+            enriched.append(job)
+            continue
+        detail_url = _to_absolute_url(str(job.get("jobUrl", "")), base_url)
+        if not detail_url:
+            enriched.append(job)
+            continue
+        try:
+            resp = requests.get(detail_url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            detail_job = _extract_cake_job_from_detail_html(resp.text, base_url)
+        except requests.RequestException:
+            detail_job = None
+        if not detail_job:
+            enriched.append(job)
+            continue
+        merged = dict(job)
+        for key in ("title", "companyName", "city", "salary", "description", "industry"):
+            value = detail_job.get(key)
+            if value not in ("", 0, None):
+                merged[key] = value
+        if not merged.get("jobUrl"):
+            merged["jobUrl"] = detail_job.get("jobUrl", "")
+        enriched.append(merged)
+    return enriched
+
+
+def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
+    base_url = os.getenv("CAKE_BASE_URL", "https://www.cake.me").strip().rstrip("/")
+    keyword = os.getenv("CAKE_KEYWORD", os.getenv("WEB104_KEYWORD", "產品經理")).strip()
+    location = os.getenv("CAKE_LOCATION", "").strip()
+    pages = int(os.getenv("CAKE_PAGES", "1"))
+    timeout = int(os.getenv("CAKE_TIMEOUT", "20"))
+    detail_timeout = int(os.getenv("CAKE_DETAIL_TIMEOUT", str(timeout)))
+    search_tmpl = os.getenv("CAKE_SEARCH_URL_TEMPLATE", "").strip()
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": base_url + "/",
+    }
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def build_search_url(page: int) -> str:
+        if search_tmpl:
+            return search_tmpl.format(
+                keyword=quote(keyword),
+                keyword_raw=keyword,
+                page=page,
+                location=quote(location),
+                location_raw=location,
+            )
+        url = f"{base_url}/jobs"
+        query_parts = [f"page={page}"]
+        if keyword:
+            query_parts.append(f"q={quote(keyword)}")
+        if location:
+            query_parts.append(f"location={quote(location)}")
+        return url + "?" + "&".join(query_parts)
+
+    for page in range(1, max(1, pages) + 1):
+        url = build_search_url(page)
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        html = resp.text
+        page_jobs = _extract_cake_jobs_from_json_ld(html, base_url)
+        if not page_jobs:
+            page_jobs = _extract_cake_jobs_from_next_data(html, base_url)
+        if not page_jobs:
+            page_jobs = _extract_cake_jobs_from_anchors(html, base_url)
+        if not page_jobs:
+            break
+        added = 0
+        for item in page_jobs:
+            key = _to_absolute_url(str(item.get("jobUrl", "")), base_url)
+            if not key:
+                key = f"{str(item.get('title', '')).lower()}::{str(item.get('companyName', '')).lower()}"
+            if key in seen:
+                continue
+            seen.add(key)
+            jobs.append(item)
+            added += 1
+        if added == 0:
+            break
+    return _enrich_cake_jobs_with_detail(jobs, base_url, headers, detail_timeout)
+
+
 def fetch_jobs_from_file(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise RuntimeError(f"找不到測試資料檔: {path}")
@@ -548,7 +963,7 @@ def render_markdown(matched: list[dict[str, Any]], date_str: str) -> str:
     lines = [
         f"# 每日職缺清單 ({date_str})",
         "",
-        "來源: https://www.104.com.tw/jobs/search/",
+        "來源: 104 / Cake 公開職缺搜尋",
         "使用限制: 僅供個人求職整理，不對外提供 API 或下載。",
         "",
     ]
@@ -570,7 +985,7 @@ def render_markdown(matched: list[dict[str, Any]], date_str: str) -> str:
 
 
 def build_line_text(matched: list[dict[str, Any]], date_str: str) -> str:
-    lines = [f"104 每日職缺 ({date_str})"]
+    lines = [f"每日職缺 ({date_str})"]
     if not matched:
         lines.append("今天沒有符合條件的職缺。")
         return "\n".join(lines)
@@ -606,12 +1021,14 @@ def minimize_job_output(job: dict[str, Any]) -> dict[str, Any]:
         "city": job.get("city", ""),
         "salary": "面議" if salary_num <= 0 else salary_num,
         "url": job.get("url", ""),
+        "source": job.get("source", "unknown"),
         "score": job.get("score", 0),
         "reasons": job.get("reasons", []),
     }
 
 
 def canonical_job_key(job: dict[str, Any]) -> str:
+    source = str(job.get("source", "")).strip().lower() or "unknown"
     url = str(job.get("url", "")).strip()
     if url:
         parsed = urlparse(url)
@@ -621,18 +1038,18 @@ def canonical_job_key(job: dict[str, Any]) -> str:
             path_lower = path.lower()
             job_match = re.search(r"/job/([a-z0-9]+)", path_lower)
             if job_match:
-                return f"104job::{job_match.group(1)}"
+                return f"104::{job_match.group(1)}"
             query = parse_qs(parsed.query)
             for key in ("jobno", "jobNo", "jobid", "jobId"):
                 vals = query.get(key)
                 if vals and vals[0].strip():
-                    return f"104job::{vals[0].strip().lower()}"
+                    return f"104::{vals[0].strip().lower()}"
         normalized_url = f"{host}{path}".rstrip("/")
         if normalized_url:
-            return normalized_url
+            return f"{source}::{normalized_url}"
     title = str(job.get("title", "")).strip().lower()
     company = str(job.get("company", "")).strip().lower()
-    return f"{title}::{company}"
+    return f"{source}::{title}::{company}"
 
 
 def load_seen_job_keys(path: Path) -> set[str]:
@@ -804,6 +1221,13 @@ def append_google_sheet_rows(matched: list[dict[str, Any]], date_str: str) -> bo
         except (TypeError, ValueError):
             salary_num = 0
         salary_text = "面議" if salary_num <= 0 else str(raw_salary)
+        source_name = str(job.get("source", "")).strip().lower()
+        if source_name == "104":
+            source_text = "https://www.104.com.tw/jobs/search/"
+        elif source_name == "cake":
+            source_text = "https://www.cake.me/jobs"
+        else:
+            source_text = source_name
         mapping = {
             "date": date_str,
             "日期": date_str,
@@ -825,8 +1249,8 @@ def append_google_sheet_rows(matched: list[dict[str, Any]], date_str: str) -> bo
             "url": str(job.get("url", "")),
             "連結": str(job.get("url", "")),
             "link": str(job.get("url", "")),
-            "source": "https://www.104.com.tw/jobs/search/",
-            "來源": "https://www.104.com.tw/jobs/search/",
+            "source": source_text,
+            "來源": source_text,
             "投遞": "未投遞",
             "開信": "FALSE",
             "回應": "FALSE",
@@ -850,18 +1274,18 @@ def append_google_sheet_rows(matched: list[dict[str, Any]], date_str: str) -> bo
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="104 每日職缺篩選工具")
+    parser = argparse.ArgumentParser(description="每日職缺篩選工具（104 / Cake）")
     parser.add_argument(
         "--source",
         default="web104",
-        choices=["web104", "api", "file"],
-        help="資料來源: web104(104 公開搜尋) / api / file(本地測試)",
+        choices=["web104", "cake", "api", "file"],
+        help="資料來源: web104(104 公開搜尋) / cake / api / file(本地測試)",
     )
-    parser.add_argument("--rules", default="rules.json", help="篩選規則檔案")
+    parser.add_argument("--rules", default="", help="篩選規則檔案")
     parser.add_argument("--output-dir", default="outputs", help="輸出資料夾")
     parser.add_argument(
         "--seen-file",
-        default="outputs/seen_job_keys.txt",
+        default="",
         help="已處理職缺去重檔案（跨次執行）",
     )
     parser.add_argument(
@@ -875,21 +1299,42 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    rules_path = Path(args.rules)
     output_dir = Path(args.output_dir)
-    seen_file = Path(args.seen_file)
     output_dir.mkdir(parents=True, exist_ok=True)
+    source_file_prefix = {
+        "web104": "jobs_104",
+        "cake": "jobs_cake",
+        "api": "jobs_api",
+        "file": "jobs_file",
+    }.get(args.source, "jobs")
+    default_rules_name = "rules_cake.json" if args.source == "cake" else "rules.json"
+    rules_path = Path(args.rules) if args.rules else Path(default_rules_name)
+    if args.seen_file:
+        seen_file = Path(args.seen_file)
+    else:
+        default_seen_name = {
+            "web104": "seen_104_job_keys.txt",
+            "cake": "seen_cake_job_keys.txt",
+            "api": "seen_api_job_keys.txt",
+            "file": "seen_file_job_keys.txt",
+        }.get(args.source, "seen_job_keys.txt")
+        seen_file = output_dir / default_seen_name
 
     rules = load_rules(rules_path)
     if args.source == "web104":
         raw_jobs = fetch_jobs_from_104_web()
-        jobs = [normalize_job(j) for j in raw_jobs]
+        jobs = [normalize_job(j, source="104") for j in raw_jobs]
+    elif args.source == "cake":
+        raw_jobs = fetch_jobs_from_cake_web()
+        jobs = [normalize_job(j, source="cake") for j in raw_jobs]
     elif args.source == "file":
         jobs = fetch_jobs_from_file(Path(args.input_file))
+        for j in jobs:
+            j["source"] = j.get("source", "file")
         raw_jobs = jobs
     else:
         raw_jobs = fetch_jobs()
-        jobs = [normalize_job(j) for j in raw_jobs]
+        jobs = [normalize_job(j, source="api") for j in raw_jobs]
 
     # Remove duplicates in the same run.
     deduped_jobs: list[dict[str, Any]] = []
@@ -925,15 +1370,15 @@ def main() -> None:
     minimized_jobs = [minimize_job_output(job) for job in matched]
     json_output = {
         "date": date_str,
-        "source": "https://www.104.com.tw/jobs/search/",
+        "source": args.source,
         "usage_notice": "僅供個人求職整理，不對外提供 API 或下載。",
         "total_candidates": len(raw_jobs),
         "matched_count": len(minimized_jobs),
         "matched_jobs": minimized_jobs,
     }
 
-    md_path = output_dir / f"jobs_{date_str}.md"
-    json_path = output_dir / f"jobs_{date_str}.json"
+    md_path = output_dir / f"{source_file_prefix}_{date_str}.md"
+    json_path = output_dir / f"{source_file_prefix}_{date_str}.json"
     md_path.write_text(md_content, encoding="utf-8")
     json_path.write_text(
         json.dumps(json_output, ensure_ascii=False, indent=2), encoding="utf-8"
