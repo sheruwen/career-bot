@@ -44,7 +44,9 @@ jobs:
       - name: Restore seen-job dedup cache
         uses: actions/cache/restore@v4
         with:
-          path: outputs/seen_104_job_keys.txt
+          path: |
+            outputs/seen_104_job_keys.txt
+            outputs/seen_cake_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
             seen-job-keys-${{ github.ref_name }}-
@@ -81,14 +83,19 @@ jobs:
             echo "GOOGLE_SHEETS_CREDENTIALS_FILE=" >> "$GITHUB_ENV"
           fi
 
-      - name: Run daily job tool
+      - name: Run daily job tool (104)
         run: python3 job_tool.py --source web104 --rules rules.json --output-dir outputs
+
+      - name: Run daily job tool (Cake)
+        run: python3 job_tool.py --source cake --output-dir outputs
 
       - name: Save seen-job dedup cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: outputs/seen_104_job_keys.txt
+          path: |
+            outputs/seen_104_job_keys.txt
+            outputs/seen_cake_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload output artifacts
@@ -100,3 +107,4 @@ jobs:
             outputs/jobs_*.md
             outputs/jobs_*.json
             outputs/seen_104_job_keys.txt
+            outputs/seen_cake_job_keys.txt
