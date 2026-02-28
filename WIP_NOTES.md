@@ -1,0 +1,50 @@
+# WIP Notes
+
+## Current Status
+
+- 104 / Cake crawler 已完成並已推上 `main`
+- GitHub Actions 已可同時跑 104 + Cake
+- Google credentials 已整理到：
+  - `/Users/wendy/.config/codex/google/google-service-account.json`
+  - `/Users/wendy/.config/codex/google/google-oauth-client.json`
+  - `/Users/wendy/.config/codex/google/google-drive-token.json`
+- Cover letter / Drive integration 尚未完成，不在 `main`
+
+## WIP Files
+
+- `scripts/apply_test.py`
+- `scripts/generate_cover_letters_drive.py`
+- `requirements.txt`
+
+## Intentionally Local Only
+
+- `.browser_profiles/`
+- OAuth client / token files
+- shared credentials under `~/.config/codex/google/`
+
+## Current Findings
+
+- PDF resume parsing 品質差，不適合作為主要來源
+- `Resume_BeiYu_Wang.md` 已建立並上傳到 Google Drive
+- OAuth 已可存取個人 Google Drive
+- Drive 子資料夾建立與檔案寫入可行
+- Cover letter 內容品質仍需調整，不適合全面生成
+- 104 / Cake 自動投遞流程尚未穩定，先不要繼續往 submit automation 推進
+
+## Next Step
+
+1. 以文字版履歷（md / Google Doc）作為唯一來源
+2. 只重跑前 2 筆職缺的 cover letter
+3. 先優化模板與內容品質，再擴大到全部職缺
+
+## Resume / Template Drive IDs
+
+- Resume md: `18cjX8Kez2pCywcGg7jP5PyjTnJaIYQ3L`
+- Cover Letter CN: `1hwOQ68gSjz4dvZpx1hPYDD4rKlNu03QJ6slbv5MfyBk`
+- Cover Letter EN: `1K0NwmWofNC-zgiNCQKQuu9qxhB4Zk1m3BhjmuiKJzMQ`
+- Parent folder: `19RrPAFDrwbrl6AzFjleEdOBI_gH4R3xZ`
+
+## Branch Convention
+
+- Keep this unfinished work on a local branch such as `wip/cover-letter-drive`
+- Do not merge to `main` until content quality is acceptable

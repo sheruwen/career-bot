@@ -1,5 +1,9 @@
 # Project Notes
 
+## WIP Continuation
+
+If this project is being resumed mid-development, read `WIP_NOTES.md` first before making changes.
+
 ## Google Credentials Convention
 
 For Google Drive / Google Sheets integration, reuse the shared machine-level credentials instead of storing project-specific copies.
