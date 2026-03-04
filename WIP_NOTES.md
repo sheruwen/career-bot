@@ -31,6 +31,15 @@
 - Cover letter 內容品質仍需調整，不適合全面生成
 - 104 / Cake 自動投遞流程尚未穩定，先不要繼續往 submit automation 推進
 
+## Recent Decisions
+
+- 104 預設抓取頁數改為 `WEB104_PAGES=3`（程式預設值），手動擴搜時可暫時用 `5` 頁。
+- 104 規則目前保留較乾淨的版本：`require_industry_match=true`、`top_n=50`。
+- `.browser_profiles/` 已加入 `.gitignore`，維持 local only，不應提交。
+- GitHub push 目標預設使用 `sheruwen`。
+- 這台機器若直接 `git push` 仍被 `osxkeychain` 干擾，可用一次性命令強制走 GitHub CLI 認證：
+  - `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`
+
 ## Next Step
 
 1. 以文字版履歷（md / Google Doc）作為唯一來源
