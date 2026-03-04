@@ -11,3 +11,4 @@ keys/
 *service-account*.json
 *credentials*.json
 .DS_Store
+.browser_profiles/
