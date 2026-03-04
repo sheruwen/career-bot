@@ -22,7 +22,7 @@ cp rules.example.json rules.json
 編輯 `.env`：
 - `WEB104_KEYWORD`: 搜尋關鍵字（例如 `產品經理`）
 - `WEB104_AREA`: 地區代碼（例如 `6001001000` 代表台北市）
-- `WEB104_PAGES`: 要抓幾頁搜尋結果
+- `WEB104_PAGES`: 要抓幾頁搜尋結果（建議先設 `3`，通常能增加覆蓋率又不至於太容易被擋）
 - `CAKE_KEYWORD`: Cake 搜尋關鍵字（例如 `產品經理`）
 - `CAKE_LOCATION`: Cake 地區（可留空）
 - `CAKE_PAGES`: Cake 要抓幾頁

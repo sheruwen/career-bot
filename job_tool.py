@@ -505,7 +505,7 @@ def fetch_jobs() -> list[dict[str, Any]]:
 def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
     keyword = os.getenv("WEB104_KEYWORD", "產品經理").strip()
     area = os.getenv("WEB104_AREA", "6001001000").strip()
-    pages = int(os.getenv("WEB104_PAGES", "1"))
+    pages = int(os.getenv("WEB104_PAGES", "3"))
     order = os.getenv("WEB104_ORDER", "15").strip()
     asc = os.getenv("WEB104_ASC", "0").strip()
     timeout = int(os.getenv("WEB104_TIMEOUT", "20"))
