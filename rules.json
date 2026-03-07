@@ -113,5 +113,5 @@
   "minimum_salary": 50000,
   "require_remote": false,
   "minimum_score": 8,
-  "top_n": 10
+  "top_n": 50
 }

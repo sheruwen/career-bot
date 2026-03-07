@@ -505,7 +505,7 @@ def fetch_jobs() -> list[dict[str, Any]]:
 def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
     keyword = os.getenv("WEB104_KEYWORD", "產品經理").strip()
     area = os.getenv("WEB104_AREA", "6001001000").strip()
-    pages = int(os.getenv("WEB104_PAGES", "1"))
+    pages = int(os.getenv("WEB104_PAGES", "3"))
     order = os.getenv("WEB104_ORDER", "15").strip()
     asc = os.getenv("WEB104_ASC", "0").strip()
     timeout = int(os.getenv("WEB104_TIMEOUT", "20"))
@@ -840,6 +840,98 @@ def _enrich_cake_jobs_with_detail(
     return enriched
 
 
+def _build_cake_search_url(
+    *,
+    base_url: str,
+    keyword: str,
+    location: str,
+    page: int,
+    search_tmpl: str,
+) -> str:
+    if search_tmpl:
+        return search_tmpl.format(
+            keyword=quote(keyword),
+            keyword_raw=keyword,
+            page=page,
+            location=quote(location),
+            location_raw=location,
+        )
+    keyword_path = quote(keyword) if keyword else ""
+    url = f"{base_url}/jobs/{keyword_path}" if keyword_path else f"{base_url}/jobs"
+    query_parts = [f"page={page}"]
+    if location:
+        query_parts.append(f"location={quote(location)}")
+    return url + "?" + "&".join(query_parts)
+
+
+def _fetch_cake_jobs_with_playwright(
+    *,
+    base_url: str,
+    keyword: str,
+    location: str,
+    pages: int,
+    timeout_ms: int,
+    search_tmpl: str,
+) -> list[dict[str, Any]]:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+    from playwright.sync_api import sync_playwright
+
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        for idx in range(1, max(1, pages) + 1):
+            url = _build_cake_search_url(
+                base_url=base_url,
+                keyword=keyword,
+                location=location,
+                page=idx,
+                search_tmpl=search_tmpl,
+            )
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                page.wait_for_timeout(2500)
+            except PlaywrightTimeoutError:
+                continue
+            hrefs = page.eval_on_selector_all(
+                "a[href]",
+                "els => els.map(e => e.getAttribute('href') || '')",
+            )
+            page_added = 0
+            for href_raw in hrefs:
+                href = str(href_raw).strip()
+                if not href:
+                    continue
+                url_abs = _to_absolute_url(href, base_url)
+                if not _is_cake_job_url(url_abs):
+                    continue
+                key = url_abs.rstrip("/")
+                if key in seen:
+                    continue
+                seen.add(key)
+                jobs.append(
+                    {
+                        "title": "",
+                        "companyName": "",
+                        "city": "",
+                        "salary": 0,
+                        "jobUrl": url_abs,
+                        "description": "",
+                        "industry": "",
+                        "keyword": [],
+                        "remote": False,
+                    }
+                )
+                page_added += 1
+            if page_added == 0:
+                break
+        browser.close()
+    return jobs
+
+
 def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
     base_url = os.getenv("CAKE_BASE_URL", "https://www.cake.me").strip().rstrip("/")
     keyword = os.getenv("CAKE_KEYWORD", os.getenv("WEB104_KEYWORD", "產品經理")).strip()
@@ -854,28 +946,38 @@ def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": base_url + "/",
     }
+    use_playwright = os.getenv("CAKE_USE_PLAYWRIGHT", "true").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    if use_playwright:
+        try:
+            jobs_pw = _fetch_cake_jobs_with_playwright(
+                base_url=base_url,
+                keyword=keyword,
+                location=location,
+                pages=pages,
+                timeout_ms=timeout * 1000,
+                search_tmpl=search_tmpl,
+            )
+            if jobs_pw:
+                return _enrich_cake_jobs_with_detail(jobs_pw, base_url, headers, detail_timeout)
+            print("WARN: Cake Playwright 抓取結果為空，改用 requests fallback")
+        except Exception as exc:
+            print(f"WARN: Cake Playwright 抓取失敗，改用 requests fallback: {exc}")
+
     jobs: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    def build_search_url(page: int) -> str:
-        if search_tmpl:
-            return search_tmpl.format(
-                keyword=quote(keyword),
-                keyword_raw=keyword,
-                page=page,
-                location=quote(location),
-                location_raw=location,
-            )
-        url = f"{base_url}/jobs"
-        query_parts = [f"page={page}"]
-        if keyword:
-            query_parts.append(f"q={quote(keyword)}")
-        if location:
-            query_parts.append(f"location={quote(location)}")
-        return url + "?" + "&".join(query_parts)
-
     for page in range(1, max(1, pages) + 1):
-        url = build_search_url(page)
+        url = _build_cake_search_url(
+            base_url=base_url,
+            keyword=keyword,
+            location=location,
+            page=page,
+            search_tmpl=search_tmpl,
+        )
         resp = requests.get(url, headers=headers, timeout=timeout)
         resp.raise_for_status()
         html = resp.text
