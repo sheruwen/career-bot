@@ -13,6 +13,7 @@
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python3 -m playwright install chromium
 cp .env.example .env
 cp rules.example.json rules.json
 ```
@@ -27,6 +28,7 @@ cp rules.example.json rules.json
 - `CAKE_LOCATION`: Cake 地區（可留空）
 - `CAKE_PAGES`: Cake 要抓幾頁
 - `CAKE_SEARCH_URL_TEMPLATE`: Cake 搜尋 URL 模板（可留空，預設 `/jobs/{keyword}?page={page}`）
+- `CAKE_USE_PLAYWRIGHT`: 是否優先使用 Playwright 抓動態頁（預設 `true`，失敗時自動 fallback）
 - `LINE_CHANNEL_ACCESS_TOKEN`: LINE Messaging API token
 - `LINE_TO_USER_ID`: 要推播的 LINE 使用者 ID
 - `GOOGLE_SHEETS_CREDENTIALS_FILE`: service account JSON 絕對路徑
