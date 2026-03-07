@@ -40,6 +40,15 @@
 - 這台機器若直接 `git push` 仍被 `osxkeychain` 干擾，可用一次性命令強制走 GitHub CLI 認證：
   - `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`
 
+## Latest Update (2026-03-08)
+
+- `wip/job-search-tuning` 已合併並推上 `main`。
+- GitHub repo secret `WEB104_PAGES` 已更新（由使用者在 GitHub 端操作）。
+- Cake 抓取改為 Playwright 優先、requests fallback；`CAKE_PAGES=3` 測試時可抓到 `30` 筆原始候選（先前常見為 `10` 筆）。
+- 測試去重檔建議使用：
+  - 104: `/tmp/seen_104_job_keys.txt`
+  - Cake: `/tmp/seen_cake_job_keys.txt`
+
 ## Next Step
 
 1. 以文字版履歷（md / Google Doc）作為唯一來源
