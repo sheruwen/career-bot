@@ -45,6 +45,13 @@
 - `wip/job-search-tuning` 已合併並推上 `main`。
 - GitHub repo secret `WEB104_PAGES` 已更新（由使用者在 GitHub 端操作）。
 - Cake 抓取改為 Playwright 優先、requests fallback；`CAKE_PAGES=3` 測試時可抓到 `30` 筆原始候選（先前常見為 `10` 筆）。
+- 104 / Cake 抓取層已支援多關鍵字：
+  - `WEB104_KEYWORDS`（優先於 `WEB104_KEYWORD`）
+  - `CAKE_KEYWORDS`（優先於 `CAKE_KEYWORD`）
+- 規則檔已加入 `Project Manager` / `Software Project Manager` / `專案經理`，擴充 PM 類職缺範圍。
+- 多關鍵字測試結果（不回寫正式 seen）：
+  - 104：`total_candidates=384`、`matched_count=50`
+  - Cake：`total_candidates=75`、`matched_count=15`
 - 測試去重檔建議使用：
   - 104: `/tmp/seen_104_job_keys.txt`
   - Cake: `/tmp/seen_cake_job_keys.txt`
