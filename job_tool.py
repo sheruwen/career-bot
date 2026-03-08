@@ -503,7 +503,14 @@ def fetch_jobs() -> list[dict[str, Any]]:
 
 
 def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
-    keyword = os.getenv("WEB104_KEYWORD", "產品經理").strip()
+    raw_keywords = os.getenv("WEB104_KEYWORDS", "").strip()
+    if raw_keywords:
+        keywords = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
+    else:
+        keywords = [os.getenv("WEB104_KEYWORD", "產品經理").strip()]
+    keywords = [kw for kw in keywords if kw]
+    if not keywords:
+        keywords = ["產品經理"]
     area = os.getenv("WEB104_AREA", "6001001000").strip()
     pages = int(os.getenv("WEB104_PAGES", "3"))
     order = os.getenv("WEB104_ORDER", "15").strip()
@@ -517,22 +524,23 @@ def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
         "Accept": "application/json, text/plain, */*",
     }
     jobs: list[dict[str, Any]] = []
-    for page in range(1, max(1, pages) + 1):
-        params = {
-            "keyword": keyword,
-            "area": area,
-            "page": str(page),
-            "order": order,
-            "asc": asc,
-            "mode": "s",
-            "jobsource": "2018indexpoc",
-        }
-        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
-        if not isinstance(data, list) or not data:
-            break
-        jobs.extend(data)
+    for keyword in keywords:
+        for page in range(1, max(1, pages) + 1):
+            params = {
+                "keyword": keyword,
+                "area": area,
+                "page": str(page),
+                "order": order,
+                "asc": asc,
+                "mode": "s",
+                "jobsource": "2018indexpoc",
+            }
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            if not isinstance(data, list) or not data:
+                break
+            jobs.extend(data)
     return jobs
 
 
@@ -867,7 +875,7 @@ def _build_cake_search_url(
 def _fetch_cake_jobs_with_playwright(
     *,
     base_url: str,
-    keyword: str,
+    keywords: list[str],
     location: str,
     pages: int,
     timeout_ms: int,
@@ -883,58 +891,67 @@ def _fetch_cake_jobs_with_playwright(
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
-        for idx in range(1, max(1, pages) + 1):
-            url = _build_cake_search_url(
-                base_url=base_url,
-                keyword=keyword,
-                location=location,
-                page=idx,
-                search_tmpl=search_tmpl,
-            )
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                page.wait_for_timeout(2500)
-            except PlaywrightTimeoutError:
-                continue
-            hrefs = page.eval_on_selector_all(
-                "a[href]",
-                "els => els.map(e => e.getAttribute('href') || '')",
-            )
-            page_added = 0
-            for href_raw in hrefs:
-                href = str(href_raw).strip()
-                if not href:
-                    continue
-                url_abs = _to_absolute_url(href, base_url)
-                if not _is_cake_job_url(url_abs):
-                    continue
-                key = url_abs.rstrip("/")
-                if key in seen:
-                    continue
-                seen.add(key)
-                jobs.append(
-                    {
-                        "title": "",
-                        "companyName": "",
-                        "city": "",
-                        "salary": 0,
-                        "jobUrl": url_abs,
-                        "description": "",
-                        "industry": "",
-                        "keyword": [],
-                        "remote": False,
-                    }
+        for keyword in keywords:
+            for idx in range(1, max(1, pages) + 1):
+                url = _build_cake_search_url(
+                    base_url=base_url,
+                    keyword=keyword,
+                    location=location,
+                    page=idx,
+                    search_tmpl=search_tmpl,
                 )
-                page_added += 1
-            if page_added == 0:
-                break
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    page.wait_for_timeout(2500)
+                except PlaywrightTimeoutError:
+                    continue
+                hrefs = page.eval_on_selector_all(
+                    "a[href]",
+                    "els => els.map(e => e.getAttribute('href') || '')",
+                )
+                page_added = 0
+                for href_raw in hrefs:
+                    href = str(href_raw).strip()
+                    if not href:
+                        continue
+                    url_abs = _to_absolute_url(href, base_url)
+                    if not _is_cake_job_url(url_abs):
+                        continue
+                    key = url_abs.rstrip("/")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    jobs.append(
+                        {
+                            "title": "",
+                            "companyName": "",
+                            "city": "",
+                            "salary": 0,
+                            "jobUrl": url_abs,
+                            "description": "",
+                            "industry": "",
+                            "keyword": [],
+                            "remote": False,
+                        }
+                    )
+                    page_added += 1
+                if page_added == 0:
+                    break
         browser.close()
     return jobs
 
 
 def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
     base_url = os.getenv("CAKE_BASE_URL", "https://www.cake.me").strip().rstrip("/")
-    keyword = os.getenv("CAKE_KEYWORD", os.getenv("WEB104_KEYWORD", "產品經理")).strip()
+    raw_keywords = os.getenv("CAKE_KEYWORDS", "").strip()
+    if raw_keywords:
+        keywords = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
+    else:
+        default_kw = os.getenv("CAKE_KEYWORD", os.getenv("WEB104_KEYWORD", "產品經理")).strip()
+        keywords = [default_kw]
+    keywords = [kw for kw in keywords if kw]
+    if not keywords:
+        keywords = ["產品經理"]
     location = os.getenv("CAKE_LOCATION", "").strip()
     pages = int(os.getenv("CAKE_PAGES", "1"))
     timeout = int(os.getenv("CAKE_TIMEOUT", "20"))
@@ -955,7 +972,7 @@ def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
         try:
             jobs_pw = _fetch_cake_jobs_with_playwright(
                 base_url=base_url,
-                keyword=keyword,
+                keywords=keywords,
                 location=location,
                 pages=pages,
                 timeout_ms=timeout * 1000,
@@ -970,36 +987,37 @@ def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for page in range(1, max(1, pages) + 1):
-        url = _build_cake_search_url(
-            base_url=base_url,
-            keyword=keyword,
-            location=location,
-            page=page,
-            search_tmpl=search_tmpl,
-        )
-        resp = requests.get(url, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-        html = resp.text
-        page_jobs = _extract_cake_jobs_from_json_ld(html, base_url)
-        if not page_jobs:
-            page_jobs = _extract_cake_jobs_from_next_data(html, base_url)
-        if not page_jobs:
-            page_jobs = _extract_cake_jobs_from_anchors(html, base_url)
-        if not page_jobs:
-            break
-        added = 0
-        for item in page_jobs:
-            key = _to_absolute_url(str(item.get("jobUrl", "")), base_url)
-            if not key:
-                key = f"{str(item.get('title', '')).lower()}::{str(item.get('companyName', '')).lower()}"
-            if key in seen:
-                continue
-            seen.add(key)
-            jobs.append(item)
-            added += 1
-        if added == 0:
-            break
+    for keyword in keywords:
+        for page in range(1, max(1, pages) + 1):
+            url = _build_cake_search_url(
+                base_url=base_url,
+                keyword=keyword,
+                location=location,
+                page=page,
+                search_tmpl=search_tmpl,
+            )
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            html = resp.text
+            page_jobs = _extract_cake_jobs_from_json_ld(html, base_url)
+            if not page_jobs:
+                page_jobs = _extract_cake_jobs_from_next_data(html, base_url)
+            if not page_jobs:
+                page_jobs = _extract_cake_jobs_from_anchors(html, base_url)
+            if not page_jobs:
+                break
+            added = 0
+            for item in page_jobs:
+                key = _to_absolute_url(str(item.get("jobUrl", "")), base_url)
+                if not key:
+                    key = f"{str(item.get('title', '')).lower()}::{str(item.get('companyName', '')).lower()}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                jobs.append(item)
+                added += 1
+            if added == 0:
+                break
     return _enrich_cake_jobs_with_detail(jobs, base_url, headers, detail_timeout)
 
 

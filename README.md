@@ -22,9 +22,11 @@ cp rules.example.json rules.json
 
 編輯 `.env`：
 - `WEB104_KEYWORD`: 搜尋關鍵字（例如 `產品經理`）
+- `WEB104_KEYWORDS`: 多關鍵字（逗號分隔，例：`產品經理,專案經理,Product Manager,Project Manager`；若設定會優先於 `WEB104_KEYWORD`）
 - `WEB104_AREA`: 地區代碼（例如 `6001001000` 代表台北市）
 - `WEB104_PAGES`: 要抓幾頁搜尋結果（建議先設 `3`，通常能增加覆蓋率又不至於太容易被擋）
 - `CAKE_KEYWORD`: Cake 搜尋關鍵字（例如 `產品經理`）
+- `CAKE_KEYWORDS`: Cake 多關鍵字（逗號分隔；若設定會優先於 `CAKE_KEYWORD`）
 - `CAKE_LOCATION`: Cake 地區（可留空）
 - `CAKE_PAGES`: Cake 要抓幾頁
 - `CAKE_SEARCH_URL_TEMPLATE`: Cake 搜尋 URL 模板（可留空，預設 `/jobs/{keyword}?page={page}`）
