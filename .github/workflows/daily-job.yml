@@ -31,8 +31,9 @@ jobs:
       WEB104_API_URL: ${{ secrets.WEB104_API_URL || 'https://www.104.com.tw/jobs/search/api/jobs' }}
       WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD || '產品經理' }}
       WEB104_AREA: ${{ secrets.WEB104_AREA || '6001001000' }}
-      WEB104_PAGES: ${{ secrets.WEB104_PAGES || '1' }}
+      WEB104_PAGES: ${{ secrets.WEB104_PAGES || '5' }}
       WEB104_ORDER: ${{ secrets.WEB104_ORDER || '15' }}
+      WEB104_ORDERS: ${{ secrets.WEB104_ORDERS || '' }}
       WEB104_ASC: ${{ secrets.WEB104_ASC || '0' }}
       WEB104_TIMEOUT: ${{ secrets.WEB104_TIMEOUT || '20' }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}

@@ -25,6 +25,8 @@ cp rules.example.json rules.json
 - `WEB104_KEYWORDS`: 多關鍵字（逗號分隔，例：`產品經理,專案經理,Product Manager,Project Manager`；若設定會優先於 `WEB104_KEYWORD`）
 - `WEB104_AREA`: 地區代碼（例如 `6001001000` 代表台北市）
 - `WEB104_PAGES`: 要抓幾頁搜尋結果（建議先設 `3`，通常能增加覆蓋率又不至於太容易被擋）
+- `WEB104_ORDER`: 104 排序（常用：`15`=符合度、`16`=最新更新）
+- `WEB104_ORDERS`: 104 多排序（逗號分隔，例：`15,16`；若設定會優先於 `WEB104_ORDER`）
 - `CAKE_KEYWORD`: Cake 搜尋關鍵字（例如 `產品經理`）
 - `CAKE_KEYWORDS`: Cake 多關鍵字（逗號分隔；若設定會優先於 `CAKE_KEYWORD`）
 - `CAKE_LOCATION`: Cake 地區（可留空）
@@ -38,6 +40,8 @@ cp rules.example.json rules.json
 - `GOOGLE_SHEETS_WORKSHEET`: 工作表名稱（預設 `Job List`）
 - `GOOGLE_SHEETS_HEADER_ROW`: 欄位列號（預設 `auto`，自動判斷表頭列）
 - `GOOGLE_SHEETS_CREATE_WORKSHEET_IF_MISSING`: 是否允許自動建新分頁（預設 `false`）
+
+補充：當 `WEB104_ORDERS=15,16` 時，會先合併去重再用既有規則評分；同分情況優先保留來自 `order=16` 的職缺。
 
 編輯規則檔以符合你的求職條件：
 - 104：`rules.json`
@@ -130,6 +134,7 @@ crontab -e
 - `WEB104_AREA`
 - `WEB104_PAGES`
 - `WEB104_ORDER`
+- `WEB104_ORDERS`（可留空；設定後會覆蓋 `WEB104_ORDER`）
 - `WEB104_ASC`
 - `WEB104_TIMEOUT`
 - `LINE_CHANNEL_ACCESS_TOKEN`

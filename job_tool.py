@@ -513,7 +513,16 @@ def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
         keywords = ["產品經理"]
     area = os.getenv("WEB104_AREA", "6001001000").strip()
     pages = int(os.getenv("WEB104_PAGES", "3"))
-    order = os.getenv("WEB104_ORDER", "15").strip()
+    raw_orders = os.getenv("WEB104_ORDERS", "").strip()
+    if raw_orders:
+        orders = [o.strip() for o in raw_orders.split(",") if o.strip()]
+    else:
+        orders = [os.getenv("WEB104_ORDER", "15").strip()]
+    orders = [o for o in orders if o]
+    if not orders:
+        orders = ["15"]
+    # Keep order list stable while removing duplicates.
+    orders = list(dict.fromkeys(orders))
     asc = os.getenv("WEB104_ASC", "0").strip()
     timeout = int(os.getenv("WEB104_TIMEOUT", "20"))
     url = os.getenv("WEB104_API_URL", "https://www.104.com.tw/jobs/search/api/jobs").strip()
@@ -524,24 +533,57 @@ def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
         "Accept": "application/json, text/plain, */*",
     }
     jobs: list[dict[str, Any]] = []
-    for keyword in keywords:
-        for page in range(1, max(1, pages) + 1):
-            params = {
-                "keyword": keyword,
-                "area": area,
-                "page": str(page),
-                "order": order,
-                "asc": asc,
-                "mode": "s",
-                "jobsource": "2018indexpoc",
-            }
-            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
-            resp.raise_for_status()
-            data = resp.json().get("data", [])
-            if not isinstance(data, list) or not data:
-                break
-            jobs.extend(data)
+    for order in orders:
+        for keyword in keywords:
+            for page in range(1, max(1, pages) + 1):
+                params = {
+                    "keyword": keyword,
+                    "area": area,
+                    "page": str(page),
+                    "order": order,
+                    "asc": asc,
+                    "mode": "s",
+                    "jobsource": "2018indexpoc",
+                }
+                resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                if not isinstance(data, list) or not data:
+                    break
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    item_copy = dict(item)
+                    item_copy["_web104_order"] = order
+                    jobs.append(item_copy)
     return jobs
+
+
+def _extract_web104_orders(job: dict[str, Any]) -> set[int]:
+    source_raw = job.get("source_raw")
+    if not isinstance(source_raw, dict):
+        return set()
+    raw_orders = source_raw.get("_web104_orders")
+    if not isinstance(raw_orders, list):
+        raw_orders = [source_raw.get("_web104_order")]
+    result: set[int] = set()
+    for raw in raw_orders:
+        try:
+            result.add(int(str(raw).strip()))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _merge_web104_orders(base_job: dict[str, Any], incoming_job: dict[str, Any]) -> None:
+    merged = _extract_web104_orders(base_job) | _extract_web104_orders(incoming_job)
+    if not merged:
+        return
+    source_raw = base_job.get("source_raw")
+    if not isinstance(source_raw, dict):
+        source_raw = {}
+        base_job["source_raw"] = source_raw
+    source_raw["_web104_orders"] = sorted(merged)
 
 
 def _iter_dicts(node: Any) -> Iterator[dict[str, Any]]:
@@ -1458,12 +1500,13 @@ def main() -> None:
 
     # Remove duplicates in the same run.
     deduped_jobs: list[dict[str, Any]] = []
-    run_seen_keys: set[str] = set()
+    run_seen_keys: dict[str, int] = {}
     for job in jobs:
         key = canonical_job_key(job)
         if key in run_seen_keys:
+            _merge_web104_orders(deduped_jobs[run_seen_keys[key]], job)
             continue
-        run_seen_keys.add(key)
+        run_seen_keys[key] = len(deduped_jobs)
         deduped_jobs.append(job)
     jobs = deduped_jobs
 
@@ -1482,7 +1525,13 @@ def main() -> None:
         job["reasons"] = reasons
         matched.append(job)
 
-    matched.sort(key=lambda x: x["score"], reverse=True)
+    matched.sort(
+        key=lambda x: (
+            x.get("score", 0),
+            1 if 16 in _extract_web104_orders(x) else 0,
+        ),
+        reverse=True,
+    )
     matched = matched[: rules.top_n]
 
     date_str = dt.date.today().isoformat()
