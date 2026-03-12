@@ -39,6 +39,13 @@
     "駐點",
     "約聘"
   ],
+  "title_include_keywords": [
+    "產品經理",
+    "Product Manager",
+    "專案經理",
+    "Project Manager"
+  ],
+  "require_title_include_keyword_match": false,
   "include_companies": [
     "趨勢科技",
     "Appier"

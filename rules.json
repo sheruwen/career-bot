@@ -5,7 +5,6 @@
     "Project Manager",
     "Software Project Manager",
     "專案經理",
-    "PM",
     "產品規劃",
     "產品策略",
     "需求訪談",
@@ -24,10 +23,7 @@
     "backlog",
     "Scrum",
     "Agile",
-    "跨部門協作",
-    "RD",
-    "Designer",
-    "QA"
+    "跨部門協作"
   ],
   "require_include_keyword_match": true,
   "fuzzy_match_enabled": true,
@@ -87,22 +83,47 @@
     "輪班",
     "駐點",
     "約聘",
-    "業務代表"
+    "業務代表",
+    "人資",
+    "recruiter"
   ],
+  "title_include_keywords": [
+    "產品經理",
+    "Product Manager",
+    "專案經理",
+    "Project Manager",
+    "PM",
+    "APM",
+    "PO"
+  ],
+  "require_title_include_keyword_match": true,
   "include_companies": [],
   "exclude_companies": [
     "博弈"
   ],
   "include_industry_keywords": [
     "軟體",
+    "軟體服務",
     "資訊服務",
+    "資訊系統",
     "網際網路",
+    "網路服務",
+    "互聯網",
+    "電子商務",
+    "電商",
     "SaaS",
     "雲端",
+    "雲端服務",
     "數位科技",
-    "AI"
+    "AI",
+    "Data",
+    "數據",
+    "金融科技",
+    "FinTech",
+    "資安",
+    "資訊安全"
   ],
-  "require_industry_match": true,
+  "require_industry_match": false,
   "allowed_cities": [
     "台北市",
     "新北市",
@@ -115,6 +136,6 @@
   ],
   "minimum_salary": 50000,
   "require_remote": false,
-  "minimum_score": 8,
+  "minimum_score": 10,
   "top_n": 50
 }

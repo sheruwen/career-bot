@@ -28,6 +28,8 @@ class MatchRule:
     fuzzy_match_enabled: bool
     fuzzy_match_threshold: float
     exclude_keywords: list[str]
+    title_include_keywords: list[str]
+    require_title_include_keyword_match: bool
     preferred_cities: list[str]
     allowed_cities: list[str]
     include_companies: list[str]
@@ -132,6 +134,10 @@ def load_rules(path: Path) -> MatchRule:
         fuzzy_match_enabled=bool(raw.get("fuzzy_match_enabled", True)),
         fuzzy_match_threshold=float(raw.get("fuzzy_match_threshold", 0.82)),
         exclude_keywords=raw.get("exclude_keywords", []),
+        title_include_keywords=raw.get("title_include_keywords", []),
+        require_title_include_keyword_match=bool(
+            raw.get("require_title_include_keyword_match", False)
+        ),
         preferred_cities=raw.get("preferred_cities", []),
         allowed_cities=raw.get("allowed_cities", []),
         include_companies=raw.get("include_companies", []),
@@ -347,9 +353,10 @@ def score_job(job: dict[str, Any], rules: MatchRule) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     company_lower = job["company"].lower()
+    title_text = job["title"].lower()
     fulltext = " ".join(
         [
-            job["title"].lower(),
+            title_text,
             job["company"].lower(),
             job["city"].lower(),
             job.get("industry", "").lower(),
@@ -363,6 +370,19 @@ def score_job(job: dict[str, Any], rules: MatchRule) -> tuple[int, list[str]]:
             fulltext, kw, rules.fuzzy_match_enabled, rules.fuzzy_match_threshold
         ):
             return -9999, [f"排除關鍵字: {kw}"]
+
+    if rules.require_title_include_keyword_match and rules.title_include_keywords:
+        title_hit = any(
+            keyword_in_text(
+                title_text,
+                kw,
+                rules.fuzzy_match_enabled,
+                rules.fuzzy_match_threshold,
+            )
+            for kw in rules.title_include_keywords
+        )
+        if not title_hit:
+            return -9999, ["職稱非目標 PM 類型"]
 
     required_groups = rules.required_keyword_groups
     if not required_groups:

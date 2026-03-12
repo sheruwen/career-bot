@@ -53,6 +53,8 @@ cp rules.example.json rules.json
 - `required_keyword_groups`: 每一組同義詞至少命中一個
 - `min_required_group_matches`: 需要命中的群組數（例如 `2` 代表四組中中兩組即可）
 - `exclude_keywords`: 命中就排除
+- `title_include_keywords`: 職稱白名單關鍵字（只檢查 title）
+- `require_title_include_keyword_match`: 是否要求職稱必須命中白名單
 - `include_companies` / `exclude_companies`: 公司白名單加分、黑名單排除
 - `include_industry_keywords`: 產業關鍵字（例如軟體、SaaS、雲端）
 - `require_industry_match`: 是否改成硬篩選目標產業
