@@ -56,6 +56,25 @@
   - 104: `/tmp/seen_104_job_keys.txt`
   - Cake: `/tmp/seen_cake_job_keys.txt`
 
+## Latest Update (2026-03-18)
+
+- `main` 已新增 Yourator 來源，`job_tool.py` 支援 `--source yourator`。
+- 新增 `rules_yourator.json`，Yourator 使用獨立規則，不再與 104/Cake 共用。
+- GitHub Actions `daily-job.yml` 已串接 Yourator：
+  - 新增 `Run daily job tool (Yourator)` step。
+  - dedup cache / artifacts 已納入 `outputs/seen_yourator_job_keys.txt`。
+  - Yourator env/secrets 已加入 workflow（`YOURATOR_*`）。
+- Yourator 抓取層已放寬並上線：
+  - `YOURATOR_KEYWORDS=產品經理,專案經理,product manager,project manager,product owner,PO,APM`
+  - `YOURATOR_PAGES=10`（本機 `.env` + GitHub secret 已同步）
+- 104 規則近況：
+  - 新增職稱白名單欄位 `title_include_keywords` / `require_title_include_keyword_match`。
+  - 職稱白名單比對改為 non-fuzzy，降低 `PM` 縮寫誤判。
+  - `require_industry_match=false`（目前不做硬性產業阻擋）。
+- 規則調整驗證重點：
+  - 你提供的 4 筆 Yourator PM 樣本可命中（score 124~194）。
+  - Yourator dry-run（不回寫 seen / 不推播 / 不寫 Sheet）可穩定產出結果。
+
 ## Next Step
 
 1. 以文字版履歷（md / Google Doc）作為唯一來源
