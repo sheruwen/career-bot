@@ -36,6 +36,12 @@ jobs:
       WEB104_ORDERS: ${{ secrets.WEB104_ORDERS || '' }}
       WEB104_ASC: ${{ secrets.WEB104_ASC || '0' }}
       WEB104_TIMEOUT: ${{ secrets.WEB104_TIMEOUT || '20' }}
+      YOURATOR_BASE_URL: ${{ secrets.YOURATOR_BASE_URL || 'https://www.yourator.co' }}
+      YOURATOR_API_URL: ${{ secrets.YOURATOR_API_URL || 'https://www.yourator.co/api/v4/jobs' }}
+      YOURATOR_KEYWORD: ${{ secrets.YOURATOR_KEYWORD || '產品經理' }}
+      YOURATOR_KEYWORDS: ${{ secrets.YOURATOR_KEYWORDS || '' }}
+      YOURATOR_PAGES: ${{ secrets.YOURATOR_PAGES || '3' }}
+      YOURATOR_TIMEOUT: ${{ secrets.YOURATOR_TIMEOUT || '20' }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
       LINE_PUSH_ENDPOINT: ${{ secrets.LINE_PUSH_ENDPOINT || 'https://api.line.me/v2/bot/message/push' }}
@@ -64,6 +70,7 @@ jobs:
           path: |
             outputs/seen_104_job_keys.txt
             outputs/seen_cake_job_keys.txt
+            outputs/seen_yourator_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
             seen-job-keys-${{ github.ref_name }}-
@@ -127,6 +134,16 @@ jobs:
           fi
           python3 job_tool.py --source cake --output-dir outputs --seen-file "$SEEN_CAKE"
 
+      - name: Run daily job tool (Yourator)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEEN_YOURATOR="outputs/seen_yourator_job_keys.txt"
+          if [ "${MANUAL_TEST_MODE}" = "true" ]; then
+            SEEN_YOURATOR="/tmp/seen_yourator_job_keys.txt"
+          fi
+          python3 job_tool.py --source yourator --output-dir outputs --seen-file "$SEEN_YOURATOR"
+
       - name: Save seen-job dedup cache
         if: always() && env.MANUAL_TEST_MODE != 'true'
         uses: actions/cache/save@v4
@@ -134,6 +151,7 @@ jobs:
           path: |
             outputs/seen_104_job_keys.txt
             outputs/seen_cake_job_keys.txt
+            outputs/seen_yourator_job_keys.txt
           key: seen-job-keys-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload output artifacts
@@ -146,3 +164,4 @@ jobs:
             outputs/jobs_*.json
             outputs/seen_104_job_keys.txt
             outputs/seen_cake_job_keys.txt
+            outputs/seen_yourator_job_keys.txt

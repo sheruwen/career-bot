@@ -376,7 +376,7 @@ def score_job(job: dict[str, Any], rules: MatchRule) -> tuple[int, list[str]]:
             keyword_in_text(
                 title_text,
                 kw,
-                rules.fuzzy_match_enabled,
+                False,
                 rules.fuzzy_match_threshold,
             )
             for kw in rules.title_include_keywords
@@ -1083,6 +1083,93 @@ def fetch_jobs_from_cake_web() -> list[dict[str, Any]]:
     return _enrich_cake_jobs_with_detail(jobs, base_url, headers, detail_timeout)
 
 
+def fetch_jobs_from_yourator_web() -> list[dict[str, Any]]:
+    base_url = os.getenv("YOURATOR_BASE_URL", "https://www.yourator.co").strip().rstrip("/")
+    api_url = os.getenv("YOURATOR_API_URL", f"{base_url}/api/v4/jobs").strip()
+    raw_keywords = os.getenv("YOURATOR_KEYWORDS", "").strip()
+    if raw_keywords:
+        keywords = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
+    else:
+        default_kw = os.getenv("YOURATOR_KEYWORD", os.getenv("WEB104_KEYWORD", "產品經理")).strip()
+        keywords = [default_kw]
+    keywords = [kw for kw in keywords if kw]
+    if not keywords:
+        keywords = ["產品經理"]
+    pages = int(os.getenv("YOURATOR_PAGES", "3"))
+    timeout = int(os.getenv("YOURATOR_TIMEOUT", "20"))
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": base_url + "/jobs",
+    }
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for keyword in keywords:
+        for page in range(1, max(1, pages) + 1):
+            resp = requests.get(
+                api_url,
+                params={"term": keyword, "page": page},
+                headers=headers,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            payload = resp.json().get("payload", {})
+            page_jobs = payload.get("jobs", [])
+            if not isinstance(page_jobs, list) or not page_jobs:
+                break
+            added = 0
+            for item in page_jobs:
+                if not isinstance(item, dict):
+                    continue
+                path = str(item.get("path", "")).strip()
+                job_url = _to_absolute_url(path, base_url) if path else ""
+                key = job_url or f"yourator::{str(item.get('id', '')).strip()}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                tags_raw = item.get("tags", [])
+                tags: list[str] = []
+                if isinstance(tags_raw, list):
+                    for tag in tags_raw:
+                        if isinstance(tag, dict):
+                            val = str(tag.get("name", "")).strip()
+                        else:
+                            val = str(tag).strip()
+                        if val:
+                            tags.append(val)
+                category = item.get("category", {})
+                if isinstance(category, dict):
+                    industry = str(category.get("name", "")).strip()
+                else:
+                    industry = ""
+                company = item.get("company", {})
+                if isinstance(company, dict):
+                    company_name = str(company.get("brand", "")).strip()
+                else:
+                    company_name = ""
+                jobs.append(
+                    {
+                        "title": str(item.get("name", "")).strip(),
+                        "companyName": company_name,
+                        "city": str(item.get("location", "")).strip(),
+                        "salary": _coerce_int(item.get("salary", "")),
+                        "jobUrl": job_url,
+                        "description": str(item.get("content", "")).strip(),
+                        "industry": industry,
+                        "keyword": tags,
+                        "remote": False,
+                    }
+                )
+                added += 1
+            if added == 0:
+                break
+            if payload.get("hasMore") is False:
+                break
+    return jobs
+
+
 def fetch_jobs_from_file(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise RuntimeError(f"找不到測試資料檔: {path}")
@@ -1408,6 +1495,8 @@ def append_google_sheet_rows(matched: list[dict[str, Any]], date_str: str) -> bo
             source_text = "https://www.104.com.tw/jobs/search/"
         elif source_name == "cake":
             source_text = "https://www.cake.me/jobs"
+        elif source_name == "yourator":
+            source_text = "https://www.yourator.co/jobs"
         else:
             source_text = source_name
         mapping = {
@@ -1456,12 +1545,12 @@ def append_google_sheet_rows(matched: list[dict[str, Any]], date_str: str) -> bo
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="每日職缺篩選工具（104 / Cake）")
+    parser = argparse.ArgumentParser(description="每日職缺篩選工具（104 / Cake / Yourator）")
     parser.add_argument(
         "--source",
         default="web104",
-        choices=["web104", "cake", "api", "file"],
-        help="資料來源: web104(104 公開搜尋) / cake / api / file(本地測試)",
+        choices=["web104", "cake", "yourator", "api", "file"],
+        help="資料來源: web104(104 公開搜尋) / cake / yourator / api / file(本地測試)",
     )
     parser.add_argument("--rules", default="", help="篩選規則檔案")
     parser.add_argument("--output-dir", default="outputs", help="輸出資料夾")
@@ -1486,10 +1575,14 @@ def main() -> None:
     source_file_prefix = {
         "web104": "jobs_104",
         "cake": "jobs_cake",
+        "yourator": "jobs_yourator",
         "api": "jobs_api",
         "file": "jobs_file",
     }.get(args.source, "jobs")
-    default_rules_name = "rules_cake.json" if args.source == "cake" else "rules.json"
+    default_rules_name = {
+        "cake": "rules_cake.json",
+        "yourator": "rules_yourator.json",
+    }.get(args.source, "rules.json")
     rules_path = Path(args.rules) if args.rules else Path(default_rules_name)
     if args.seen_file:
         seen_file = Path(args.seen_file)
@@ -1497,6 +1590,7 @@ def main() -> None:
         default_seen_name = {
             "web104": "seen_104_job_keys.txt",
             "cake": "seen_cake_job_keys.txt",
+            "yourator": "seen_yourator_job_keys.txt",
             "api": "seen_api_job_keys.txt",
             "file": "seen_file_job_keys.txt",
         }.get(args.source, "seen_job_keys.txt")
@@ -1509,6 +1603,9 @@ def main() -> None:
     elif args.source == "cake":
         raw_jobs = fetch_jobs_from_cake_web()
         jobs = [normalize_job(j, source="cake") for j in raw_jobs]
+    elif args.source == "yourator":
+        raw_jobs = fetch_jobs_from_yourator_web()
+        jobs = [normalize_job(j, source="yourator") for j in raw_jobs]
     elif args.source == "file":
         jobs = fetch_jobs_from_file(Path(args.input_file))
         for j in jobs:

@@ -1,8 +1,8 @@
-# 每日職缺清單工具（104 / Cake + LINE 推播）
+# 每日職缺清單工具（104 / Cake / Yourator + LINE 推播）
 
 這個工具會：
-1. 直接抓取 104 或 Cake 公開搜尋職缺。
-2. 用來源對應規則檔（104: `rules.json`、Cake: `rules_cake.json`）評分與篩選職缺。
+1. 直接抓取 104、Cake 或 Yourator 公開搜尋職缺。
+2. 用來源對應規則檔（104: `rules.json`、Cake: `rules_cake.json`、Yourator: `rules_yourator.json`）評分與篩選職缺。
 3. 每次輸出當日結果到來源分離檔案（例如 `outputs/jobs_104_YYYY-MM-DD.json`、`outputs/jobs_cake_YYYY-MM-DD.json`）。
 4. 把摘要推播到你的 LINE。
 5. 自動把當日職缺 append 到 Google Sheet。
@@ -33,6 +33,10 @@ cp rules.example.json rules.json
 - `CAKE_PAGES`: Cake 要抓幾頁
 - `CAKE_SEARCH_URL_TEMPLATE`: Cake 搜尋 URL 模板（可留空，預設 `/jobs/{keyword}?page={page}`）
 - `CAKE_USE_PLAYWRIGHT`: 是否優先使用 Playwright 抓動態頁（預設 `true`，失敗時自動 fallback）
+- `YOURATOR_KEYWORD`: Yourator 搜尋關鍵字（例如 `產品經理`）
+- `YOURATOR_KEYWORDS`: Yourator 多關鍵字（逗號分隔；若設定會優先於 `YOURATOR_KEYWORD`）
+- `YOURATOR_PAGES`: Yourator 搜尋頁數
+- `YOURATOR_TIMEOUT`: Yourator API timeout（秒）
 - `LINE_CHANNEL_ACCESS_TOKEN`: LINE Messaging API token
 - `LINE_TO_USER_ID`: 要推播的 LINE 使用者 ID
 - `GOOGLE_SHEETS_CREDENTIALS_FILE`: service account JSON 絕對路徑
@@ -139,6 +143,12 @@ crontab -e
 - `WEB104_ORDERS`（可留空；設定後會覆蓋 `WEB104_ORDER`）
 - `WEB104_ASC`
 - `WEB104_TIMEOUT`
+- `YOURATOR_BASE_URL`（建議：`https://www.yourator.co`）
+- `YOURATOR_API_URL`（建議：`https://www.yourator.co/api/v4/jobs`）
+- `YOURATOR_KEYWORD`
+- `YOURATOR_KEYWORDS`（可留空；設定後會覆蓋 `YOURATOR_KEYWORD`）
+- `YOURATOR_PAGES`
+- `YOURATOR_TIMEOUT`
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LINE_TO_USER_ID`
 - `LINE_PUSH_ENDPOINT`（建議：`https://api.line.me/v2/bot/message/push`）
@@ -183,7 +193,7 @@ Content-Type: application/json
 
 - 預設 `--source web104`（104 公開搜尋），不需要 104 access token。
 - 可用 `--source cake` 抓 Cake 公開職缺搜尋頁。
-- 104/Cake 預設使用分離去重檔：`outputs/seen_104_job_keys.txt`、`outputs/seen_cake_job_keys.txt`。
+- 104/Cake/Yourator 預設使用分離去重檔：`outputs/seen_104_job_keys.txt`、`outputs/seen_cake_job_keys.txt`、`outputs/seen_yourator_job_keys.txt`。
 - 若未來你有 104 API，也可以改成 `python3 job_tool.py --source api`。
 - 本工具輸出欄位採最小化（職缺名稱、公司、地點、薪資、連結、分數、理由）。
 - 輸出檔案權限為 `600`（僅檔案擁有者可讀寫）。
