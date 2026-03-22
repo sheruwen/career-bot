@@ -1229,10 +1229,12 @@ def fetch_jobs_from_imap() -> list[dict[str, Any]]:
 
 
 def render_markdown(matched: list[dict[str, Any]], date_str: str) -> str:
+    source_labels = sorted({str(item.get("source", "")).strip() for item in matched if item.get("source")})
+    source_text = " / ".join(source_labels) if source_labels else "未知來源"
     lines = [
         f"# 每日職缺清單 ({date_str})",
         "",
-        "來源: 104 / Cake 公開職缺搜尋",
+        f"來源: {source_text}",
         "使用限制: 僅供個人求職整理，不對外提供 API 或下載。",
         "",
     ]
@@ -1243,7 +1245,7 @@ def render_markdown(matched: list[dict[str, Any]], date_str: str) -> str:
     for i, m in enumerate(matched, 1):
         lines.append(f"## {i}. {m['title']} - {m['company']}")
         lines.append(f"- 地點: {m['city'] or '未提供'}")
-        salary_text = "面議" if int(m.get("salary", 0)) <= 0 else str(m.get("salary", 0))
+        salary_text = "面議" if _coerce_int(m.get("salary", 0)) <= 0 else str(m.get("salary", 0))
         lines.append(f"- 薪資下限: {salary_text}")
         lines.append(f"- 分數: {m['score']}")
         lines.append(f"- 理由: {'; '.join(m['reasons'])}")
@@ -1261,7 +1263,7 @@ def build_line_text(matched: list[dict[str, Any]], date_str: str) -> str:
     for i, m in enumerate(matched, 1):
         lines.append(f"{i}. {m['title'][:40]}")
         lines.append(f"   公司: {m.get('company', '') or '未提供'}")
-        salary_text = "面議" if int(m.get("salary", 0)) <= 0 else str(m.get("salary", 0))
+        salary_text = "面議" if _coerce_int(m.get("salary", 0)) <= 0 else str(m.get("salary", 0))
         lines.append(f"   薪資: {salary_text}")
         keyword_hits = [
             r.split(":", 1)[1].strip()
@@ -1280,10 +1282,7 @@ def build_line_text(matched: list[dict[str, Any]], date_str: str) -> str:
 
 def minimize_job_output(job: dict[str, Any]) -> dict[str, Any]:
     raw_salary = job.get("salary", 0)
-    try:
-        salary_num = int(raw_salary or 0)
-    except (TypeError, ValueError):
-        salary_num = 0
+    salary_num = _coerce_int(raw_salary)
     return {
         "title": job.get("title", ""),
         "company": job.get("company", ""),
@@ -1319,6 +1318,110 @@ def canonical_job_key(job: dict[str, Any]) -> str:
     title = str(job.get("title", "")).strip().lower()
     company = str(job.get("company", "")).strip().lower()
     return f"{source}::{title}::{company}"
+
+
+def cross_platform_job_key(job: dict[str, Any]) -> str:
+    # Dedup across sources by normalized company/title.
+    # City is intentionally excluded because one platform may miss city data.
+    title = _normalize_text_for_match(str(job.get("title", "")))
+    company = _normalize_text_for_match(str(job.get("company", "")))
+    if company or title:
+        return f"{company}::{title}"
+    return canonical_job_key(job)
+
+
+def _job_sort_key(job: dict[str, Any]) -> tuple[int, int, int]:
+    source_priority = {
+        "104": 3,
+        "cake": 2,
+        "yourator": 1,
+    }
+    source_name = str(job.get("source", "")).strip().lower()
+    return (
+        int(job.get("score", 0) or 0),
+        _coerce_int(job.get("salary", 0)),
+        source_priority.get(source_name, 0),
+    )
+
+
+def _semantic_company_title_key(job: dict[str, Any]) -> str:
+    company = _normalize_text_for_match(str(job.get("company", "")))
+    title = _normalize_text_for_match(str(job.get("title", "")))
+    return f"{company}::{title}"
+
+
+def _semantic_city_key(job: dict[str, Any]) -> str:
+    return _normalize_text_for_match(normalize_city_name(str(job.get("city", ""))))
+
+
+def dedup_by_company_title_with_city_assist(
+    jobs: list[dict[str, Any]], *, keep_order: bool = True
+) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for job in jobs:
+        base_key = _semantic_company_title_key(job)
+        if base_key == "::":
+            kept.append(job)
+            continue
+        city_key = _semantic_city_key(job)
+        candidates = buckets.get(base_key, [])
+        is_duplicate = False
+        for existing in candidates:
+            existing_city = _semantic_city_key(existing)
+            # City assists dedup:
+            # - if both non-empty and different => treat as distinct jobs
+            # - otherwise (same/one missing) => treat as duplicate
+            if city_key and existing_city and city_key != existing_city:
+                continue
+            is_duplicate = True
+            break
+        if is_duplicate:
+            continue
+        buckets.setdefault(base_key, []).append(job)
+        kept.append(job)
+    if keep_order:
+        return kept
+    return list(kept)
+
+
+def dedup_cross_platform_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked = sorted(jobs, key=_job_sort_key, reverse=True)
+    return dedup_by_company_title_with_city_assist(ranked)
+
+
+def load_source_matched_jobs_for_date(output_dir: Path, date_str: str) -> tuple[int, list[dict[str, Any]]]:
+    source_files = {
+        "104": output_dir / f"jobs_104_{date_str}.json",
+        "cake": output_dir / f"jobs_cake_{date_str}.json",
+        "yourator": output_dir / f"jobs_yourator_{date_str}.json",
+    }
+    total_candidates = 0
+    merged_jobs: list[dict[str, Any]] = []
+    for source_name, path in source_files.items():
+        if not path.exists():
+            print(f"WARN: merge 略過不存在的來源檔案: {path}")
+            continue
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            continue
+        total_candidates += int(payload.get("total_candidates", 0) or 0)
+        matched_jobs = payload.get("matched_jobs", [])
+        if not isinstance(matched_jobs, list):
+            continue
+        for item in matched_jobs:
+            if not isinstance(item, dict):
+                continue
+            merged = dict(item)
+            merged["source"] = str(merged.get("source", "")).strip() or source_name
+            merged["salary"] = _coerce_int(merged.get("salary", 0))
+            merged["score"] = int(merged.get("score", 0) or 0)
+            reasons = merged.get("reasons", [])
+            if not isinstance(reasons, list):
+                merged["reasons"] = [str(reasons)]
+            merged_jobs.append(merged)
+    return total_candidates, merged_jobs
 
 
 def load_seen_job_keys(path: Path) -> set[str]:
@@ -1549,8 +1652,8 @@ def main() -> None:
     parser.add_argument(
         "--source",
         default="web104",
-        choices=["web104", "cake", "yourator", "api", "file"],
-        help="資料來源: web104(104 公開搜尋) / cake / yourator / api / file(本地測試)",
+        choices=["web104", "cake", "yourator", "merge", "api", "file"],
+        help="資料來源: web104(104 公開搜尋) / cake / yourator / merge(跨平台合併) / api / file(本地測試)",
     )
     parser.add_argument("--rules", default="", help="篩選規則檔案")
     parser.add_argument("--output-dir", default="outputs", help="輸出資料夾")
@@ -1568,14 +1671,25 @@ def main() -> None:
     parser.add_argument(
         "--no-line-push", action="store_true", help="只輸出檔案，不推播 LINE"
     )
+    parser.add_argument(
+        "--no-google-sheet", action="store_true", help="只輸出檔案，不寫入 Google Sheet"
+    )
+    parser.add_argument(
+        "--merge-top-n",
+        type=int,
+        default=int(os.getenv("MERGE_TOP_N", "50")),
+        help="--source merge 時保留前 N 筆（預設讀 MERGE_TOP_N 或 50）",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    date_str = dt.date.today().isoformat()
     source_file_prefix = {
         "web104": "jobs_104",
         "cake": "jobs_cake",
         "yourator": "jobs_yourator",
+        "merge": "jobs_merged",
         "api": "jobs_api",
         "file": "jobs_file",
     }.get(args.source, "jobs")
@@ -1583,7 +1697,6 @@ def main() -> None:
         "cake": "rules_cake.json",
         "yourator": "rules_yourator.json",
     }.get(args.source, "rules.json")
-    rules_path = Path(args.rules) if args.rules else Path(default_rules_name)
     if args.seen_file:
         seen_file = Path(args.seen_file)
     else:
@@ -1591,74 +1704,87 @@ def main() -> None:
             "web104": "seen_104_job_keys.txt",
             "cake": "seen_cake_job_keys.txt",
             "yourator": "seen_yourator_job_keys.txt",
+            "merge": "seen_merged_job_keys.txt",
             "api": "seen_api_job_keys.txt",
             "file": "seen_file_job_keys.txt",
         }.get(args.source, "seen_job_keys.txt")
         seen_file = output_dir / default_seen_name
 
-    rules = load_rules(rules_path)
-    if args.source == "web104":
-        raw_jobs = fetch_jobs_from_104_web()
-        jobs = [normalize_job(j, source="104") for j in raw_jobs]
-    elif args.source == "cake":
-        raw_jobs = fetch_jobs_from_cake_web()
-        jobs = [normalize_job(j, source="cake") for j in raw_jobs]
-    elif args.source == "yourator":
-        raw_jobs = fetch_jobs_from_yourator_web()
-        jobs = [normalize_job(j, source="yourator") for j in raw_jobs]
-    elif args.source == "file":
-        jobs = fetch_jobs_from_file(Path(args.input_file))
-        for j in jobs:
-            j["source"] = j.get("source", "file")
-        raw_jobs = jobs
+    if args.source == "merge":
+        total_candidates, merged_input_jobs = load_source_matched_jobs_for_date(output_dir, date_str)
+        matched = dedup_cross_platform_jobs(merged_input_jobs)
+        historical_seen_keys = set()
+        if not args.ignore_seen_dedup:
+            historical_seen_keys = load_seen_job_keys(seen_file)
+            matched = [job for job in matched if cross_platform_job_key(job) not in historical_seen_keys]
+        matched.sort(key=_job_sort_key, reverse=True)
+        matched = matched[: max(0, args.merge_top_n)]
     else:
-        raw_jobs = fetch_jobs()
-        jobs = [normalize_job(j, source="api") for j in raw_jobs]
+        rules_path = Path(args.rules) if args.rules else Path(default_rules_name)
+        rules = load_rules(rules_path)
+        if args.source == "web104":
+            raw_jobs = fetch_jobs_from_104_web()
+            jobs = [normalize_job(j, source="104") for j in raw_jobs]
+        elif args.source == "cake":
+            raw_jobs = fetch_jobs_from_cake_web()
+            jobs = [normalize_job(j, source="cake") for j in raw_jobs]
+        elif args.source == "yourator":
+            raw_jobs = fetch_jobs_from_yourator_web()
+            jobs = [normalize_job(j, source="yourator") for j in raw_jobs]
+        elif args.source == "file":
+            jobs = fetch_jobs_from_file(Path(args.input_file))
+            for j in jobs:
+                j["source"] = j.get("source", "file")
+            raw_jobs = jobs
+        else:
+            raw_jobs = fetch_jobs()
+            jobs = [normalize_job(j, source="api") for j in raw_jobs]
 
-    # Remove duplicates in the same run.
-    deduped_jobs: list[dict[str, Any]] = []
-    run_seen_keys: dict[str, int] = {}
-    for job in jobs:
-        key = canonical_job_key(job)
-        if key in run_seen_keys:
-            _merge_web104_orders(deduped_jobs[run_seen_keys[key]], job)
-            continue
-        run_seen_keys[key] = len(deduped_jobs)
-        deduped_jobs.append(job)
-    jobs = deduped_jobs
+        # Remove duplicates in the same run.
+        deduped_jobs: list[dict[str, Any]] = []
+        run_seen_keys: dict[str, int] = {}
+        for job in jobs:
+            key = canonical_job_key(job)
+            if key in run_seen_keys:
+                _merge_web104_orders(deduped_jobs[run_seen_keys[key]], job)
+                continue
+            run_seen_keys[key] = len(deduped_jobs)
+            deduped_jobs.append(job)
+        jobs = deduped_jobs
 
-    # Remove jobs that were already surfaced in previous runs.
-    historical_seen_keys = set()
-    if not args.ignore_seen_dedup:
-        historical_seen_keys = load_seen_job_keys(seen_file)
-        jobs = [job for job in jobs if canonical_job_key(job) not in historical_seen_keys]
+        # Remove jobs that were already surfaced in previous runs.
+        historical_seen_keys = set()
+        if not args.ignore_seen_dedup:
+            historical_seen_keys = load_seen_job_keys(seen_file)
+            jobs = [job for job in jobs if canonical_job_key(job) not in historical_seen_keys]
 
-    matched: list[dict[str, Any]] = []
-    for job in jobs:
-        score, reasons = score_job(job, rules)
-        if score < rules.minimum_score:
-            continue
-        job["score"] = score
-        job["reasons"] = reasons
-        matched.append(job)
+        matched = []
+        for job in jobs:
+            score, reasons = score_job(job, rules)
+            if score < rules.minimum_score:
+                continue
+            job["score"] = score
+            job["reasons"] = reasons
+            matched.append(job)
 
-    matched.sort(
-        key=lambda x: (
-            x.get("score", 0),
-            1 if 16 in _extract_web104_orders(x) else 0,
-        ),
-        reverse=True,
-    )
-    matched = matched[: rules.top_n]
+        matched.sort(
+            key=lambda x: (
+                x.get("score", 0),
+                1 if 16 in _extract_web104_orders(x) else 0,
+            ),
+            reverse=True,
+        )
+        matched = dedup_by_company_title_with_city_assist(matched)
+        matched = matched[: rules.top_n]
+        total_candidates = len(raw_jobs)
 
-    date_str = dt.date.today().isoformat()
     md_content = render_markdown(matched, date_str)
     minimized_jobs = [minimize_job_output(job) for job in matched]
     json_output = {
         "date": date_str,
         "source": args.source,
         "usage_notice": "僅供個人求職整理，不對外提供 API 或下載。",
-        "total_candidates": len(raw_jobs),
+        "total_candidates": total_candidates,
         "matched_count": len(minimized_jobs),
         "matched_jobs": minimized_jobs,
     }
@@ -1674,7 +1800,10 @@ def main() -> None:
 
     new_seen_keys = set(historical_seen_keys)
     for job in minimized_jobs:
-        new_seen_keys.add(canonical_job_key(job))
+        if args.source == "merge":
+            new_seen_keys.add(cross_platform_job_key(job))
+        else:
+            new_seen_keys.add(canonical_job_key(job))
     save_seen_job_keys(seen_file, new_seen_keys)
 
     print(f"完成: {md_path}")
@@ -1683,7 +1812,7 @@ def main() -> None:
         line_text = build_line_text(matched, date_str)
         ok, msg = push_line_message(line_text)
         print(f"LINE 推播: {msg}")
-    if append_google_sheet_rows(minimized_jobs, date_str):
+    if not args.no_google_sheet and append_google_sheet_rows(minimized_jobs, date_str):
         print("Google Sheet: 已嘗試寫入（若未設定 credentials/sheet id 則自動略過）")
 
 
