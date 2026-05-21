@@ -565,8 +565,19 @@ def fetch_jobs_from_104_web() -> list[dict[str, Any]]:
                     "mode": "s",
                     "jobsource": "2018indexpoc",
                 }
-                resp = requests.get(url, headers=headers, params=params, timeout=timeout)
-                resp.raise_for_status()
+                try:
+                    resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+                    resp.raise_for_status()
+                except requests.RequestException as exc:
+                    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                    if status_code == 403:
+                        print(
+                            "WARN: 104 搜尋 API 回傳 403 Forbidden，可能被 Cloudflare challenge 擋下；"
+                            "本次略過 104，讓其他來源繼續執行。"
+                        )
+                    else:
+                        print(f"WARN: 104 搜尋 API 請求失敗，本次略過 104: {exc}")
+                    return jobs
                 data = resp.json().get("data", [])
                 if not isinstance(data, list) or not data:
                     break

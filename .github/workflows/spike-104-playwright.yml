@@ -1,0 +1,31 @@
+name: Spike 104 Playwright
+
+on:
+  workflow_dispatch:
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WEB104_API_URL: ${{ secrets.WEB104_API_URL || 'https://www.104.com.tw/jobs/search/api/jobs' }}
+      WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD || '產品經理' }}
+      WEB104_AREA: ${{ secrets.WEB104_AREA || '6001001000' }}
+      WEB104_ORDER: ${{ secrets.WEB104_ORDER || '15' }}
+      WEB104_ASC: ${{ secrets.WEB104_ASC || '0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Test 104 with Playwright
+        run: python scripts/spike_104_playwright.py

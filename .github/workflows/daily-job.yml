@@ -15,6 +15,12 @@ on:
         default: "false"
         type: choice
         options: ["false", "true"]
+      include_104:
+        description: "Include 104 fetch for this manual run"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
   repository_dispatch:
     types: [cron-fallback]
   schedule:
@@ -28,6 +34,7 @@ jobs:
     env:
       MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.manual_test_mode || 'false' }}
       DISABLE_GOOGLE_SHEETS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.disable_google_sheets || 'false' }}
+      INCLUDE_104: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.include_104 || 'false' }}
       WEB104_API_URL: ${{ secrets.WEB104_API_URL || 'https://www.104.com.tw/jobs/search/api/jobs' }}
       WEB104_KEYWORD: ${{ secrets.WEB104_KEYWORD || '產品經理' }}
       WEB104_AREA: ${{ secrets.WEB104_AREA || '6001001000' }}
@@ -116,6 +123,7 @@ jobs:
           fi
 
       - name: Run daily job tool (104)
+        if: env.INCLUDE_104 == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -133,7 +141,7 @@ jobs:
           if [ "${MANUAL_TEST_MODE}" = "true" ]; then
             SEEN_CAKE="/tmp/seen_cake_job_keys.txt"
           fi
-          python3 job_tool.py --source cake --output-dir outputs --seen-file "$SEEN_CAKE" --no-line-push --no-google-sheet
+          python3 job_tool.py --source cake --rules rules_cake.json --output-dir outputs --seen-file "$SEEN_CAKE" --no-line-push --no-google-sheet
 
       - name: Run daily job tool (Yourator)
         shell: bash
@@ -143,7 +151,7 @@ jobs:
           if [ "${MANUAL_TEST_MODE}" = "true" ]; then
             SEEN_YOURATOR="/tmp/seen_yourator_job_keys.txt"
           fi
-          python3 job_tool.py --source yourator --output-dir outputs --seen-file "$SEEN_YOURATOR" --no-line-push --no-google-sheet
+          python3 job_tool.py --source yourator --rules rules_yourator.json --output-dir outputs --seen-file "$SEEN_YOURATOR" --no-line-push --no-google-sheet
 
       - name: Run daily job tool (Merge cross-platform)
         shell: bash
